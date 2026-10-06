@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { env, isSupabaseConfigured } from "@/lib/env";
 
-const PROTECTED_PREFIXES = ["/dashboard", "/profile", "/jobs", "/tracker", "/settings"];
+const PROTECTED_PREFIXES = ["/dashboard", "/profile", "/jobs", "/tracker", "/settings", "/admin"];
 
 /** Refreshes the auth session cookie and guards app routes. */
 export async function updateSession(request: NextRequest) {

@@ -35,6 +35,20 @@ export const MatchSchema = z.object({
 });
 export type Match = z.infer<typeof MatchSchema>;
 
+export const ScreeningResultSchema = z.object({
+  criteria_results: z.array(
+    z.object({
+      criterion_id: z.string().describe("The id of the criterion, copied exactly"),
+      status: z.enum(["met", "not_met", "unclear"]),
+      evidence: z
+        .string()
+        .describe("The specific part of the application that shows this, or why it is missing. Empty only if status is unclear and nothing is relevant"),
+    }),
+  ),
+  summary: z.string().describe("Two or three plain sentences a recruiter can read in ten seconds"),
+});
+export type ScreeningResult = z.infer<typeof ScreeningResultSchema>;
+
 export const TailoredCvSchema = z.object({
   headline: z.string(),
   summary: z.string(),

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { approveDocument, markApplied, tailorForJob } from "@/app/actions/jobs";
 import { AdzunaAttribution } from "@/components/adzuna-attribution";
+import { EmployerApply } from "@/components/employer-apply";
 import { Notice } from "@/components/notice";
 import { ScoreBadge } from "@/components/score-badge";
 import type { TailoredCv } from "@/lib/ai/schemas";
@@ -23,6 +24,12 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
   const { data: doc } = application
     ? await supabase.from("tailored_documents").select("*").eq("application_id", application.id)
         .order("version", { ascending: false }).limit(1).maybeSingle()
+    : { data: null };
+
+  // Openings posted by an employer on FindSeek are applied to here rather than on an external site.
+  const { data: post } = await supabase.from("job_posts").select("id, status").eq("job_id", id).maybeSingle();
+  const { data: submission } = post
+    ? await supabase.from("post_applications").select("status, submitted_at").eq("job_post_id", post.id).eq("user_id", user.id).maybeSingle()
     : { data: null };
   const cv = doc?.cv as TailoredCv | undefined;
 
@@ -102,11 +109,15 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
                 <>
                   <span className="text-sm text-good">✓ Approved</span>
                   <Link href={`/jobs/${job.id}/cv`} className="btn-ghost">Download PDF</Link>
-                  <a href={job.apply_url} target="_blank" rel="noopener" className="btn">Open application page ↗</a>
-                  {application && application.status !== "applied" && (
-                    <form action={markApplied.bind(null, job.id, application.id)}>
-                      <button className="btn-ghost">I’ve submitted it</button>
-                    </form>
+                  {!post && (
+                    <>
+                      <a href={job.apply_url} target="_blank" rel="noopener" className="btn">Open application page ↗</a>
+                      {application && application.status !== "applied" && (
+                        <form action={markApplied.bind(null, job.id, application.id)}>
+                          <button className="btn-ghost">I’ve submitted it</button>
+                        </form>
+                      )}
+                    </>
                   )}
                 </>
               ) : (
@@ -120,6 +131,15 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
                 </form>
               )}
             </div>
+            {post && doc.approved_at && application && (
+              <EmployerApply
+                jobId={job.id}
+                applicationId={application.id}
+                company={job.company}
+                postStatus={post.status}
+                submission={submission}
+              />
+            )}
           </div>
         )}
       </section>

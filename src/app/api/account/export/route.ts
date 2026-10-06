@@ -14,10 +14,36 @@ export async function GET() {
       return [t, data ?? []] as const;
     }),
   );
-  return new NextResponse(JSON.stringify({ exported_at: new Date().toISOString(), email: user.email, ...Object.fromEntries(entries) }, null, 2), {
-    headers: {
-      "Content-Type": "application/json",
-      "Content-Disposition": `attachment; filename="findseek-data-${new Date().toISOString().slice(0, 10)}.json"`,
+
+  // Applications made to employers through FindSeek, with the AI brief and the outcome. This is the
+  // candidate's right of access to automated assessment of them. Internal recruiter notes are excluded.
+  const { data: submissions } = await supabase.from("post_applications").select("*").eq("user_id", user.id);
+  const submissionIds = (submissions ?? []).map((s) => s.id);
+  const [{ data: screenings }, { data: decisions }] = submissionIds.length
+    ? await Promise.all([
+        supabase.from("candidate_screenings").select("post_application_id, score, recommendation, criteria_results, reasons, summary, model, created_at").in("post_application_id", submissionIds),
+        supabase.from("hiring_decisions").select("post_application_id, decision, ai_recommendation, decided_at").in("post_application_id", submissionIds),
+      ])
+    : [{ data: [] }, { data: [] }];
+
+  return new NextResponse(
+    JSON.stringify(
+      {
+        exported_at: new Date().toISOString(),
+        email: user.email,
+        ...Object.fromEntries(entries),
+        employer_applications: submissions ?? [],
+        employer_ai_assessments: screenings ?? [],
+        employer_decisions: decisions ?? [],
+      },
+      null,
+      2,
+    ),
+    {
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Disposition": `attachment; filename="findseek-data-${new Date().toISOString().slice(0, 10)}.json"`,
+      },
     },
-  });
+  );
 }

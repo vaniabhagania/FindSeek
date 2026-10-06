@@ -131,6 +131,78 @@ export async function markApplied(jobId: string, applicationId: string) {
   redirect("/tracker");
 }
 
+/**
+ * Submits the approved tailored CV to an employer's opening posted on FindSeek. Unlike an external
+ * listing, the employer receives it here, so the candidate must agree to the sharing and to AI-assisted
+ * screening first. What is shared is a snapshot of the approved CV, nothing else from the profile.
+ */
+export async function submitToEmployer(jobId: string, applicationId: string, formData: FormData) {
+  const { supabase, user, profile } = await requireReadyUser();
+  const back = (error: string) => redirect(`/jobs/${jobId}?error=${encodeURIComponent(error)}`);
+
+  if (formData.get("consent_share") !== "on" || formData.get("consent_screening") !== "on") {
+    back("Tick both boxes to confirm you agree to share your CV and to AI-assisted screening.");
+  }
+
+  const { data: post } = await supabase.from("job_posts").select("id, status").eq("job_id", jobId).maybeSingle();
+  if (!post) redirect(`/jobs/${jobId}`);
+  if (post.status !== "open") back("This opening is closed and no longer accepting applications.");
+
+  const { data: application } = await supabase
+    .from("applications").select("id").eq("id", applicationId).eq("user_id", user.id).maybeSingle();
+  if (!application) redirect(`/jobs/${jobId}`);
+
+  const { data: existing } = await supabase
+    .from("post_applications").select("id").eq("job_post_id", post.id).eq("user_id", user.id).maybeSingle();
+  if (existing) back("You've already applied to this opening.");
+
+  const monthStart = new Date();
+  monthStart.setUTCDate(1);
+  monthStart.setUTCHours(0, 0, 0, 0);
+  const { count } = await supabase
+    .from("applications").select("id", { count: "exact", head: true })
+    .eq("user_id", user.id).gte("applied_at", monthStart.toISOString());
+  if ((count ?? 0) >= profile.monthly_application_cap) redirect(`/jobs/${jobId}?error=cap`);
+
+  const { data: doc } = await supabase
+    .from("tailored_documents").select("cv, cover_letter").eq("application_id", application.id)
+    .not("approved_at", "is", null).order("version", { ascending: false }).limit(1).maybeSingle();
+  if (!doc) redirect(`/jobs/${jobId}?error=approve`);
+
+  const now = new Date().toISOString();
+  const { error } = await supabase.from("post_applications").insert({
+    job_post_id: post.id,
+    user_id: user.id,
+    application_id: application.id,
+    candidate_name: profile.full_name,
+    snapshot: { location: profile.location, cv: doc.cv, cover_letter: doc.cover_letter },
+    consent_shared_at: now,
+    consent_ai_screening_at: now,
+  });
+  if (error) back("Couldn't submit your application. Please try again.");
+
+  await supabase.from("applications").update({ status: "applied", applied_at: now }).eq("id", application.id);
+  revalidatePath("/tracker");
+  redirect("/tracker");
+}
+
+/** Withdraws an application the employer hasn't decided on yet. */
+export async function withdrawFromEmployer(jobId: string) {
+  const { supabase, user } = await requireReadyUser();
+  const { data: post } = await supabase.from("job_posts").select("id").eq("job_id", jobId).maybeSingle();
+  if (post) {
+    await supabase.rpc("withdraw_post_application", { pid: post.id });
+    // Only mirror it in the tracker if the withdrawal actually took effect (not once a decision is made).
+    const { data: submitted } = await supabase
+      .from("post_applications").select("status").eq("job_post_id", post.id).eq("user_id", user.id).maybeSingle();
+    if (submitted?.status === "withdrawn") {
+      await supabase.from("applications").update({ status: "withdrawn" }).eq("user_id", user.id).eq("job_id", jobId);
+    }
+  }
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/tracker");
+}
+
 export async function setApplicationStatus(applicationId: string, formData: FormData) {
   const { supabase } = await requireReadyUser();
   const status = String(formData.get("status"));
