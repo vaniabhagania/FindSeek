@@ -9,6 +9,7 @@ import { normaliseCity } from "@/lib/india/location";
 import { fromMonth, logAiAction } from "@/lib/data/profile";
 import { requireQuota } from "@/lib/data/quota";
 import { MAX_INTAKE_CHARS } from "@/lib/limits";
+import { safeRelativePath } from "@/lib/security";
 import { getUser } from "@/lib/supabase/server";
 
 const MAX_CV_BYTES = 4 * 1024 * 1024; // Vercel functions accept at most 4.5 MB per request
@@ -41,7 +42,7 @@ export async function savePreferences(formData: FormData) {
   const { supabase, user } = await requireUser();
   const consent = formData.get("consent_ai") === "on";
   const analytics = formData.get("consent_analytics") === "on";
-  const next = String(formData.get("next") ?? "/profile");
+  const next = safeRelativePath(String(formData.get("next") ?? ""), "/profile");
 
   const { data: current } = await supabase
     .from("profiles").select("consent_ai_processing_at, consent_outcome_analytics_at").eq("id", user.id).single();
@@ -79,7 +80,7 @@ export async function savePreferences(formData: FormData) {
 
   revalidatePath("/profile");
   revalidatePath("/jobs");
-  redirect(next.startsWith("/") && !next.startsWith("//") ? `${next}${next.includes("?") ? "&" : "?"}saved=1` : "/profile?saved=1");
+  redirect(`${next}${next.includes("?") ? "&" : "?"}saved=1`);
 }
 
 /**

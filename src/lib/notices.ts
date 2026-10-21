@@ -42,6 +42,14 @@ const STATIC = {
   already_applied: "You've already applied to this opening.",
   apply_failed: "Couldn't submit your application. Please try again.",
 
+  // Reports on listings
+  report_limit: "You've sent a lot of reports today. Try again tomorrow.",
+  report_failed: "Couldn't send that report. Try again in a moment.",
+  report_hidden: "That listing isn't available to report.",
+
+  // Reviewing reports
+  ops_failed: "Couldn't record that decision. Try again in a moment.",
+
   // Daily limits on the paid AI actions
   limit_intake: "You've used today's limit for reading your own words. Fill in your preferences by hand, or try again tomorrow.",
   limit_cv: "You've used today's limit for reading CVs. Add your experience by hand, or try again tomorrow.",
@@ -61,6 +69,7 @@ const STATIC = {
   post_save: "Couldn't save the opening. Please try again.",
   service_key: "SUPABASE_SERVICE_ROLE_KEY isn't set, so openings can't be published yet.",
   unpublishable: "This opening can't be published yet.",
+  edit_unpublishable: "That change wasn't saved. The opening is live, and with this change it would no longer pass the checks candidates rely on.",
   publish_failed: "Couldn't publish the opening. Please try again.",
   criterion_kind: "Choose what kind of criterion this is.",
   criterion_length: "A criterion needs 3 to 300 characters.",

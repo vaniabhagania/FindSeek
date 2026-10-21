@@ -6,7 +6,7 @@ export async function GET() {
   const { supabase, user } = await getUser();
   if (!supabase || !user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 
-  const tables = ["profiles", "experiences", "skills", "cv_uploads", "job_matches", "applications", "tailored_documents", "ai_audit_log"];
+  const tables = ["profiles", "experiences", "skills", "cv_uploads", "job_matches", "applications", "tailored_documents", "ai_audit_log", "job_reports", "ai_usage"];
   const entries = await Promise.all(
     tables.map(async (t) => {
       const query = supabase.from(t).select("*");
@@ -14,6 +14,10 @@ export async function GET() {
       return [t, data ?? []] as const;
     }),
   );
+
+  // Jobs this person brought in from LinkedIn, Instagram, WhatsApp and the rest: the post they pasted
+  // and what FindSeek made of it.
+  const { data: broughtIn } = await supabase.from("jobs").select("*").eq("submitted_by", user.id);
 
   // Applications made to employers through FindSeek, with the AI brief and the outcome. This is the
   // candidate's right of access to automated assessment of them. Internal recruiter notes are excluded.
@@ -32,6 +36,7 @@ export async function GET() {
         exported_at: new Date().toISOString(),
         email: user.email,
         ...Object.fromEntries(entries),
+        jobs_you_brought_in: broughtIn ?? [],
         employer_applications: submissions ?? [],
         employer_ai_assessments: screenings ?? [],
         employer_decisions: decisions ?? [],
@@ -42,6 +47,8 @@ export async function GET() {
     {
       headers: {
         "Content-Type": "application/json",
+        // Personal data: never let a browser or proxy keep a copy.
+        "Cache-Control": "private, no-store",
         "Content-Disposition": `attachment; filename="findseek-data-${new Date().toISOString().slice(0, 10)}.json"`,
       },
     },

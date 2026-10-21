@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { addCriterion, closePost, deleteCriterion, publishPost, screenCandidates } from "@/app/actions/admin";
 import { RecommendationBadge, StatusChip } from "@/components/admin/recommendation-badge";
-import { Notice } from "@/components/notice";
+import { Notice, Success } from "@/components/notice";
 import type { Recommendation } from "@/lib/admin/screening";
 import { getRecruiter } from "@/lib/admin/session";
 import { SubmitButton } from "@/components/submit-button";
@@ -15,7 +15,7 @@ const KIND_LABEL: Record<string, string> = {
 
 export default async function PostPage({ params, searchParams }: PageProps<"/admin/posts/[id]">) {
   const { id } = await params;
-  const { error, checks, screened, failed } = await searchParams;
+  const { error, checks, screened, failed, saved } = await searchParams;
   const { supabase, user, employer } = await getRecruiter();
   if (!supabase || !user) return <p className="muted">Connect Supabase to use FindSeek.</p>;
   if (!employer) redirect("/admin");
@@ -55,15 +55,21 @@ export default async function PostPage({ params, searchParams }: PageProps<"/adm
             </span>
           </p>
         </div>
-        {post.status === "open" ? (
-          <form action={closePost.bind(null, post.id)}><button className="btn-ghost">Close opening</button></form>
-        ) : (
-          <form action={publishPost.bind(null, post.id)}>
-            <SubmitButton working="Checking and publishing…">{post.status === "closed" ? "Reopen" : "Publish"}</SubmitButton>
-          </form>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          <Link href={`/admin/posts/${post.id}/edit`} className="btn-ghost">Edit</Link>
+          {post.status === "open" ? (
+            <form action={closePost.bind(null, post.id)}><button className="btn-ghost">Close opening</button></form>
+          ) : (
+            <form action={publishPost.bind(null, post.id)}>
+              <SubmitButton working="Checking and publishing…">{post.status === "closed" ? "Reopen" : "Publish"}</SubmitButton>
+            </form>
+          )}
+        </div>
       </header>
       <Notice error={error} checks={checks} />
+      {saved && (
+        <Success>{saved === "live" ? "Saved. Candidates see the updated opening now." : "Saved."}</Success>
+      )}
       {screened && (
         <div className="rounded-lg border border-good/40 bg-good/5 px-4 py-3 text-sm">
           Screened {String(screened)} candidate{screened === "1" ? "" : "s"}.{failed ? ` ${String(failed)} couldn't be screened; try again.` : ""} These are suggestions: open each brief to decide.

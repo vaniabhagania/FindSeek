@@ -7,6 +7,7 @@ import { criterionViolation } from "@/lib/admin/criteria-guard";
 import { buildOutcomeEmail } from "@/lib/admin/emails";
 import { evaluate, type Criterion, type CriterionKind } from "@/lib/admin/screening";
 import { getRecruiter } from "@/lib/admin/session";
+import { payFromForm, type PayFields } from "@/lib/admin/pay-input";
 import { MODEL } from "@/lib/ai/client";
 import { screenCandidate, type ApplicationSnapshot } from "@/lib/ai/screen-candidate";
 import { logAiAction } from "@/lib/data/profile";
@@ -84,36 +85,48 @@ export async function createEmployer(formData: FormData) {
 // Openings
 // ---------------------------------------------------------------------------
 
-export async function createPost(formData: FormData) {
-  const r = await requireRecruiter();
+interface PostFields {
+  title: string;
+  description: string;
+  location: string | null;
+  remote: boolean | null;
+  pay: PayFields;
+}
+
+/** The opening form, checked. Anything wrong sends the recruiter back to `path` with a fixed message. */
+function readPostForm(formData: FormData, path: string): PostFields {
   const title = text(formData.get("title"));
   const description = text(formData.get("description"));
-  if (title.length < 2 || title.length > 160) fail("/admin/posts/new", "post_title");
-  if (description.length < 40 || description.length > MAX_POST_CHARS) fail("/admin/posts/new", "post_description");
+  if (title.length < 2 || title.length > 160) fail(path, "post_title");
+  if (description.length < 40 || description.length > MAX_POST_CHARS) fail(path, "post_description");
 
   const work = text(formData.get("work_style"));
-  const unit = text(formData.get("pay_unit")) === "month" ? "month" : "year";
-  const toAnnual = (v: FormDataEntryValue | null) => {
-    const n = Number(text(v));
-    if (!text(v) || !Number.isFinite(n) || n <= 0) return null;
-    return Math.round(unit === "month" ? n * 12 : n * 100000);
+  const paid = payFromForm(text(formData.get("pay_min")), text(formData.get("pay_max")), text(formData.get("pay_unit")));
+  if (!paid.ok) fail(path, paid.reason === "missing" ? "post_pay" : "post_pay_range");
+  return {
+    title,
+    description,
+    location: text(formData.get("location")) || null,
+    remote: work === "remote" ? true : work === "onsite" || work === "hybrid" ? false : null,
+    pay: paid.pay,
   };
-  const payMin = toAnnual(formData.get("pay_min"));
-  const payMax = toAnnual(formData.get("pay_max")) ?? payMin;
-  if (payMin == null) fail("/admin/posts/new", "post_pay");
-  if (payMax != null && payMin != null && payMax < payMin) fail("/admin/posts/new", "post_pay_range");
+}
+
+export async function createPost(formData: FormData) {
+  const r = await requireRecruiter();
+  const f = readPostForm(formData, "/admin/posts/new");
   const { data: post, error } = await r.supabase
     .from("job_posts")
     .insert({
       employer_id: r.employer.id,
-      title,
-      description,
-      location: text(formData.get("location")) || null,
+      title: f.title,
+      description: f.description,
+      location: f.location,
       country_code: "in",
-      remote: work === "remote" ? true : work === "onsite" || work === "hybrid" ? false : null,
-      pay_min_inr: payMin,
-      pay_max_inr: payMax,
-      pay_period: unit,
+      remote: f.remote,
+      pay_min_inr: f.pay.min,
+      pay_max_inr: f.pay.max,
+      pay_period: f.pay.period,
     })
     .select("id")
     .single();
@@ -121,6 +134,50 @@ export async function createPost(formData: FormData) {
 
   revalidatePath("/admin");
   redirect(`/admin/posts/${post.id}`);
+}
+
+type PostRow = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any -- rows come from an untyped client
+
+/** The opening as a listing, run through the same gate as every other source. */
+function postAsListing(r: Recruiter, post: PostRow, jobId: string, now: string) {
+  return enrichJob({
+    source: "manual",
+    external_id: post.id,
+    company: r.employer.name,
+    title: post.title,
+    location: post.location,
+    country_code: post.country_code ?? "in",
+    remote: post.remote,
+    description: post.description,
+    apply_url: `/jobs/${jobId}`,
+    salary_min: post.pay_min_inr,
+    salary_max: post.pay_max_inr,
+    salary_currency: post.pay_min_inr != null ? "INR" : null,
+    posted_at: post.published_at ?? now,
+  });
+}
+
+/** Stops with the list of missing checks when the listing would not be verified. */
+function requireVerified(enriched: ReturnType<typeof enrichJob>, path: string, code: "unpublishable" | "edit_unpublishable"): void {
+  if (enriched.verification_status === "verified") return;
+  const failed = enriched.verification_checks.filter((c) => !c.ok).map((c) => c.key);
+  fail(path, code, { checks: failed.join(",") });
+}
+
+/** Writes the verified listing into the shared jobs table. Only the server may do this. */
+async function mirrorToJobs(admin: NonNullable<ReturnType<typeof createServiceClient>>, post: PostRow, jobId: string, enriched: ReturnType<typeof enrichJob>, now: string, path: string) {
+  const { error } = await admin.from("jobs").upsert(
+    {
+      id: jobId,
+      ...enriched,
+      // Keep the employer's own period so a stipend shows per month.
+      pay_period: post.pay_period ?? enriched.pay_period,
+      last_seen_at: now,
+      closed_at: null,
+    },
+    { onConflict: "source,external_id" },
+  );
+  if (error) fail(path, "publish_failed");
 }
 
 /**
@@ -137,38 +194,9 @@ export async function publishPost(postId: string) {
 
   const jobId: string = post.job_id ?? randomUUID();
   const now = new Date().toISOString();
-  // Employer openings go through the same gate as every other listing.
-  const enriched = enrichJob({
-    source: "manual",
-    external_id: post.id,
-    company: r.employer.name,
-    title: post.title,
-    location: post.location,
-    country_code: post.country_code ?? "in",
-    remote: post.remote,
-    description: post.description,
-    apply_url: `/jobs/${jobId}`,
-    salary_min: post.pay_min_inr,
-    salary_max: post.pay_max_inr,
-    salary_currency: post.pay_min_inr != null ? "INR" : null,
-    posted_at: post.published_at ?? now,
-  });
-  if (enriched.verification_status !== "verified") {
-    const failed = enriched.verification_checks.filter((c) => !c.ok).map((c) => c.key);
-    fail(path, "unpublishable", { checks: failed.join(",") });
-  }
-  const { error: jobError } = await admin.from("jobs").upsert(
-    {
-      id: jobId,
-      ...enriched,
-      // Keep the employer's own period so a stipend shows per month.
-      pay_period: post.pay_period ?? enriched.pay_period,
-      last_seen_at: now,
-      closed_at: null,
-    },
-    { onConflict: "source,external_id" },
-  );
-  if (jobError) fail(path, "publish_failed");
+  const enriched = postAsListing(r, post, jobId, now);
+  requireVerified(enriched, path, "unpublishable");
+  await mirrorToJobs(admin, post, jobId, enriched, now, path);
 
   const { error: postError } = await admin
     .from("job_posts")
@@ -181,6 +209,65 @@ export async function publishPost(postId: string) {
   revalidatePath("/admin");
   revalidatePath("/jobs");
   redirect(path);
+}
+
+/**
+ * Edits an opening. A draft or closed opening is simply saved; it goes through the gate when it is
+ * published. An open one is live in candidates' feeds, so the edit must still pass every check
+ * before anything is saved, and the listing candidates see is updated with it.
+ */
+export async function updatePost(postId: string, formData: FormData) {
+  const r = await requireRecruiter();
+  const post = await loadOwnPost(r, postId);
+  const editPath = `/admin/posts/${post.id}/edit`;
+  const f = readPostForm(formData, editPath);
+
+  const edited: PostRow = {
+    ...post,
+    title: f.title,
+    description: f.description,
+    location: f.location,
+    remote: f.remote,
+    pay_min_inr: f.pay.min,
+    pay_max_inr: f.pay.max,
+    pay_period: f.pay.period,
+  };
+
+  const live = post.status === "open" && Boolean(post.job_id);
+  const now = new Date().toISOString();
+  let admin: ReturnType<typeof createServiceClient> = null;
+  let enriched: ReturnType<typeof enrichJob> | null = null;
+  if (live) {
+    admin = createServiceClient();
+    if (!admin) fail(editPath, "service_key");
+    enriched = postAsListing(r, edited, post.job_id, now);
+    requireVerified(enriched, editPath, "edit_unpublishable");
+  }
+
+  const { error } = await r.supabase
+    .from("job_posts")
+    .update({
+      title: f.title,
+      description: f.description,
+      location: f.location,
+      remote: f.remote,
+      pay_min_inr: f.pay.min,
+      pay_max_inr: f.pay.max,
+      pay_period: f.pay.period,
+    })
+    .eq("id", post.id)
+    .eq("employer_id", r.employer.id);
+  if (error) fail(editPath, "post_save");
+
+  if (live && admin && enriched) await mirrorToJobs(admin, edited, post.job_id, enriched, now, editPath);
+
+  revalidatePath(`/admin/posts/${post.id}`);
+  revalidatePath("/admin");
+  if (live) {
+    revalidatePath("/jobs");
+    revalidatePath(`/jobs/${post.job_id}`);
+  }
+  redirect(`/admin/posts/${post.id}?saved=${live ? "live" : "1"}`);
 }
 
 export async function closePost(postId: string) {

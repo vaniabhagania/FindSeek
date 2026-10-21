@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { env } from "@/lib/env";
 import { collectJobs } from "@/lib/jobs/ingest";
+import { bearerMatches } from "@/lib/security";
 import { createServiceClient } from "@/lib/supabase/server";
 
 export const maxDuration = 300;
@@ -13,7 +14,7 @@ const DAY = 24 * 60 * 60 * 1000;
  * sends `Authorization: Bearer $CRON_SECRET`.
  */
 export async function GET(request: NextRequest) {
-  if (!env.cronSecret || request.headers.get("authorization") !== `Bearer ${env.cronSecret}`) {
+  if (!bearerMatches(request.headers.get("authorization"), env.cronSecret)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
   const supabase = createServiceClient();

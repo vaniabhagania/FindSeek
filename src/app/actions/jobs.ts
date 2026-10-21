@@ -211,17 +211,33 @@ export async function submitListing(formData: FormData) {
 
 const REPORT_REASONS = ["closed", "fake", "wrong_pay", "not_india"];
 
-/** Users flag listings; three independent reports pull one from everyone's feed (see migration 0003). */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Users flag listings. The database weighs each report by how established the reporter is: enough
+ * weight from at least three people pulls the listing, anything less waits for a person to review it
+ * (migration 0005). Reporting needs no AI consent, only a sign-in, and only works on listings the
+ * reader can see.
+ */
 export async function reportJob(jobId: string, formData: FormData) {
-  const { supabase, user } = await requireReadyUser();
+  const { supabase, user } = await getUser();
+  if (!supabase || !user) redirect("/login");
+  if (!UUID.test(jobId)) redirect(noticeUrl("/jobs", "report_hidden"));
+  const back = `/jobs/${jobId}`;
+
   const reason = String(formData.get("reason") ?? "");
-  if (!REPORT_REASONS.includes(reason)) redirect(`/jobs/${jobId}`);
-  await supabase.from("job_reports").upsert(
-    { job_id: jobId, user_id: user.id, reason, note: String(formData.get("note") ?? "").slice(0, 500) || null },
-    { onConflict: "job_id,user_id,reason", ignoreDuplicates: true },
-  );
-  revalidatePath(`/jobs/${jobId}`);
-  redirect(`/jobs/${jobId}?reported=1`);
+  if (!REPORT_REASONS.includes(reason)) redirect(back);
+  const note = String(formData.get("note") ?? "").trim().slice(0, 500);
+
+  const { error } = await supabase.from("job_reports").insert({ job_id: jobId, user_id: user.id, reason, note: note || null });
+  if (error) {
+    if (error.code === "23505") redirect(`${back}?reported=1`); // already reported: same thanks, nothing changes
+    if (error.code === "P0001") redirect(noticeUrl(back, "report_limit"));
+    if (error.code === "42501") redirect(noticeUrl("/jobs", "report_hidden")); // not a listing this user can see
+    redirect(noticeUrl(back, "report_failed"));
+  }
+  revalidatePath(back);
+  redirect(`${back}?reported=1`);
 }
 
 export async function approveDocument(jobId: string, documentId: string, formData: FormData) {

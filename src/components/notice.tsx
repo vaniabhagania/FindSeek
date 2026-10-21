@@ -10,7 +10,7 @@ export function Notice({ error, checks }: { error?: string | string[]; checks?: 
   const code = Array.isArray(error) ? error[0] : error;
   const message = noticeMessage(code);
   if (!message) return null;
-  const failed = code === "unpublishable" ? failedCheckLabels(checks) : [];
+  const failed = (code === "unpublishable" || code === "edit_unpublishable") ? failedCheckLabels(checks) : [];
   return (
     <div role="alert" className="flex items-start gap-2.5 rounded-lg border border-blocker/30 bg-blocker/5 px-4 py-3 text-[15px] text-blocker">
       <Caution className="mt-1 shrink-0" />

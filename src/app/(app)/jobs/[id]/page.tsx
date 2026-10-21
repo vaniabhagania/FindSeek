@@ -80,7 +80,7 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
 
       <Notice error={error} />
       {added && verified && <Success>This job passed every check. You can tailor your CV for it now. It stays private to you.</Success>}
-      {reported && <Success>Thanks. If others report the same problem, the listing comes out of everyone&apos;s feed until it&apos;s re-checked.</Success>}
+      {reported && <Success>Thanks. If several other established accounts report the same problem, the listing comes out of everyone&apos;s feed; otherwise a person reviews it.</Success>}
       {closed && (
         <div className="flex items-start gap-2.5 rounded-lg border border-line bg-raised px-4 py-3 text-[15px]">
           <Cross className="mt-1 shrink-0 text-muted" />
@@ -236,7 +236,7 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
               ))}
             </div>
             <input name="note" maxLength={500} className="input" placeholder="What did you see? (optional)" />
-            <button className="btn-ghost">Send report</button>
+            <SubmitButton className="btn-ghost" working="Sending…">Send report</SubmitButton>
           </form>
         </details>
       )}

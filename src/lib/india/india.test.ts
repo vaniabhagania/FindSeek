@@ -45,6 +45,57 @@ describe("indiaEligibility: remote doesn't mean remote for you", () => {
   });
 });
 
+describe("indiaEligibility: ads that name India to rule it out", () => {
+  const status = (location: string | null, description: string) => indiaEligibility({ location, description }).status;
+
+  it.each([
+    ["Remote", "We are unable to hire candidates in India at this time."],
+    ["Remote - Worldwide (except India)", "Build APIs."],
+    ["Remote", "Open to applicants worldwide, excluding India and China."],
+    ["Remote - Worldwide (excl. India)", ""],
+    ["Remote", "We do not hire in India."],
+    ["Remote", "We cannot sponsor or employ people in India."],
+    ["Remote", "This role is not available in India."],
+    ["Remote", "Not open to candidates in India."],
+    ["Remote", "India is not eligible for this role."],
+    ["Remote", "No candidates from India, please."],
+    ["Remote", "Hiring outside India only."],
+    ["Remote", "Candidates must be based outside of India."],
+  ])("%s | %s", (location, description) => {
+    expect(status(location, description)).toBe("not_eligible");
+  });
+
+  it("does not turn a refusal around when the same sentence welcomes India", () => {
+    expect(status("Remote", "We don't offer relocation, but candidates in India are welcome.")).toBe("eligible");
+    expect(status("Remote", "We do not support visa sponsorship, hire in India.")).toBe("eligible");
+  });
+
+  it("keeps roles in India eligible when the ad only says it wants people already there", () => {
+    expect(status("Bengaluru", "Not open to candidates based outside India.")).toBe("eligible");
+    expect(status("Pune, India", "We do not sponsor visas. Candidates in India only.")).toBe("eligible");
+  });
+
+  it("reads the word India as a yes only when the same clause talks about hiring", () => {
+    expect(status("Remote", "Open to candidates in India and Sri Lanka.")).toBe("eligible");
+    expect(status("Remote", "We are hiring remote engineers in India.")).toBe("eligible");
+    expect(status("Remote", "Our customers in India love us.\nOur culture is great.\nWe work remotely.")).toBe("unclear");
+  });
+
+  it("takes the office from the description when the location field is empty", () => {
+    expect(status(null, "Join our Pune office. Requirements: B.Tech.")).toBe("eligible");
+    expect(status("", "You will be based in Hyderabad and report to the CTO.")).toBe("eligible");
+    expect(indiaEligibility({ location: null, description: "Join our Pune office." }).reason).toBe("The ad puts the office in Pune");
+  });
+
+  it("does not take an office from the description when the location says remote", () => {
+    expect(status("Remote", "HQ in San Francisco. You may visit our Pune office once a year.")).toBe("unclear");
+  });
+
+  it("ignores short aliases that turn up in other words", () => {
+    expect(status(null, "Join NCR Corporation and ship great software.")).toBe("unclear");
+  });
+});
+
 describe("parsePay", () => {
   it("reads LPA ranges", () => {
     expect(parsePay("CTC: ₹12-18 LPA plus ESOPs")).toMatchObject({ minAnnualInr: 1_200_000, maxAnnualInr: 1_800_000, period: "year" });

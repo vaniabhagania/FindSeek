@@ -13,6 +13,8 @@ export const env = {
     .map((c) => c.trim().toLowerCase())
     .filter(Boolean),
   cronSecret: process.env.CRON_SECRET ?? "",
+  // Who may review user reports of bad listings (/ops/reports). Comma-separated email addresses.
+  operatorEmails: process.env.OPERATOR_EMAILS ?? "",
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   emailFrom: process.env.EMAIL_FROM ?? "",
 };
