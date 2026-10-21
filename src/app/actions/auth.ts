@@ -17,7 +17,7 @@ export async function signInWithEmail(formData: FormData) {
     email,
     options: { emailRedirectTo: `${origin}/auth/callback?next=${encodeURIComponent(next)}` },
   });
-  if (error) redirect(`/login?error=${encodeURIComponent(error.message)}`);
+  if (error) redirect(error.status === 429 || /rate limit|too many|seconds/i.test(error.message) ? "/login?error=ratelimit" : "/login?error=signin");
   redirect("/login?sent=1");
 }
 

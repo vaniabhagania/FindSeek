@@ -5,6 +5,7 @@ import { RecommendationBadge, StatusChip } from "@/components/admin/recommendati
 import { Notice } from "@/components/notice";
 import type { Recommendation } from "@/lib/admin/screening";
 import { getRecruiter } from "@/lib/admin/session";
+import { SubmitButton } from "@/components/submit-button";
 
 const KIND_LABEL: Record<string, string> = {
   hard_requirement: "Hard requirement",
@@ -14,7 +15,7 @@ const KIND_LABEL: Record<string, string> = {
 
 export default async function PostPage({ params, searchParams }: PageProps<"/admin/posts/[id]">) {
   const { id } = await params;
-  const { error, screened, failed } = await searchParams;
+  const { error, checks, screened, failed } = await searchParams;
   const { supabase, user, employer } = await getRecruiter();
   if (!supabase || !user) return <p className="muted">Connect Supabase to use FindSeek.</p>;
   if (!employer) redirect("/admin");
@@ -58,11 +59,11 @@ export default async function PostPage({ params, searchParams }: PageProps<"/adm
           <form action={closePost.bind(null, post.id)}><button className="btn-ghost">Close opening</button></form>
         ) : (
           <form action={publishPost.bind(null, post.id)}>
-            <button className="btn">{post.status === "closed" ? "Reopen" : "Publish"}</button>
+            <SubmitButton working="Checking and publishing…">{post.status === "closed" ? "Reopen" : "Publish"}</SubmitButton>
           </form>
         )}
       </header>
-      <Notice error={error} />
+      <Notice error={error} checks={checks} />
       {screened && (
         <div className="rounded-lg border border-good/40 bg-good/5 px-4 py-3 text-sm">
           Screened {String(screened)} candidate{screened === "1" ? "" : "s"}.{failed ? ` ${String(failed)} couldn't be screened; try again.` : ""} These are suggestions: open each brief to decide.
@@ -106,7 +107,7 @@ export default async function PostPage({ params, searchParams }: PageProps<"/adm
           <h2 className="font-semibold">Candidates <span className="muted">{(applications ?? []).length}</span></h2>
           {waitingToScreen > 0 && (
             <form action={screenCandidates.bind(null, post.id)}>
-              <button className="btn">Screen {Math.min(waitingToScreen, 10)} new candidate{waitingToScreen === 1 ? "" : "s"}</button>
+              <SubmitButton working="Screening candidates…">Screen {Math.min(waitingToScreen, 10)} new candidate{waitingToScreen === 1 ? "" : "s"}</SubmitButton>
             </form>
           )}
         </div>

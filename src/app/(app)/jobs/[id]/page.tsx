@@ -14,6 +14,7 @@ import { fitChecks } from "@/lib/jobs/fit";
 import { checkedAgo, ghostSignals, postedAgo } from "@/lib/jobs/freshness";
 import type { Check as VerifyCheck } from "@/lib/jobs/verify";
 import { getUser } from "@/lib/supabase/server";
+import { SubmitButton } from "@/components/submit-button";
 
 const SEEN_ON: Record<string, string> = {
   linkedin: "LinkedIn", instagram: "Instagram", facebook: "Facebook", whatsapp: "WhatsApp", telegram: "Telegram", naukri: "Naukri", x: "X", other: "elsewhere",
@@ -146,7 +147,7 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2>Tailored CV {doc && <span className="text-sm font-normal text-muted">Version {doc.version}</span>}</h2>
             <form action={tailorForJob.bind(null, job.id)}>
-              <button className={doc ? "btn-ghost" : "btn"}>{doc ? "Regenerate" : "Tailor my CV for this job"}</button>
+              <SubmitButton className={doc ? "btn-ghost" : "btn"} working="Reading the job and your profile…">{doc ? "Regenerate" : "Tailor my CV for this job"}</SubmitButton>
             </form>
           </div>
           {!doc && <p className="mt-2 muted">Takes about a minute. Uses only the facts you&apos;ve confirmed. We check the job is still open first.</p>}
@@ -194,7 +195,7 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
                         <a href={job.apply_url} target="_blank" rel="noopener" className="btn">Open application page <External /></a>
                         {application && application.status !== "applied" && (
                           <form action={markApplied.bind(null, job.id, application.id)}>
-                            <button className="btn-ghost">I&apos;ve submitted it</button>
+                            <SubmitButton className="btn-ghost" working="Saving…">I&apos;ve submitted it</SubmitButton>
                           </form>
                         )}
                       </>
@@ -207,7 +208,7 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
                         <input type="checkbox" name="ack_warnings" /> I&apos;ve checked the warnings and everything is true
                       </label>
                     )}
-                    <button className="btn">Approve this CV</button>
+                    <SubmitButton working="Approving…">Approve this CV</SubmitButton>
                   </form>
                 )}
               </div>

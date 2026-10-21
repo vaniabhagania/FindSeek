@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { submitListing } from "@/app/actions/jobs";
 import { Notice } from "@/components/notice";
+import { SubmitButton } from "@/components/submit-button";
 
 const PLATFORMS = [
   { value: "linkedin", label: "LinkedIn" },
@@ -76,7 +77,7 @@ export default async function AddJobPage({ searchParams }: PageProps<"/jobs/add"
         </div>
 
         <div className="flex flex-wrap items-center gap-3 border-t border-line pt-5">
-          <button className="btn">Check this job</button>
+          <SubmitButton working="Reading the post and checking it…">Check this job</SubmitButton>
           <span className="muted">Takes a few seconds. Stays private to you.</span>
         </div>
       </form>

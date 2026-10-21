@@ -7,6 +7,7 @@ import { Notice, Success } from "@/components/notice";
 import { PreferencesForm } from "@/components/preferences-form";
 import { toMonth } from "@/lib/data/profile";
 import { getUser } from "@/lib/supabase/server";
+import { SubmitButton } from "@/components/submit-button";
 
 export default async function ProfilePage({ searchParams }: PageProps<"/profile">) {
   const { error, parsed, saved } = await searchParams;
@@ -40,7 +41,7 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
         <p className="mt-1 muted">PDF or plain text, up to 4 MB. We extract the facts; you confirm them.</p>
         <form action={uploadCv} className="mt-4 flex flex-wrap items-center gap-3">
           <input type="file" name="cv" accept=".pdf,.txt,application/pdf,text/plain" required className="text-sm" />
-          <button className="btn">Read my CV</button>
+          <SubmitButton working="Reading your CV…">Read my CV</SubmitButton>
         </form>
       </section>
 

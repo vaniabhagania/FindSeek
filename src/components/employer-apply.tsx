@@ -1,4 +1,5 @@
 import { submitToEmployer, withdrawFromEmployer } from "@/app/actions/jobs";
+import { SubmitButton } from "@/components/submit-button";
 
 interface Props {
   jobId: string;
@@ -31,7 +32,7 @@ export function EmployerApply({ jobId, applicationId, company, postStatus, submi
         )}
         {canWithdraw && (
           <form action={withdrawFromEmployer.bind(null, jobId)} className="mt-3">
-            <button className="btn-ghost">Withdraw my application</button>
+            <SubmitButton className="btn-ghost" working="Withdrawing…">Withdraw my application</SubmitButton>
           </form>
         )}
       </div>
@@ -56,7 +57,7 @@ export function EmployerApply({ jobId, applicationId, company, postStatus, submi
           final decision. I can withdraw my application or ask for my data to be deleted at any time.
         </span>
       </label>
-      <button className="btn">Submit my application</button>
+      <SubmitButton working="Sending your application…">Submit my application</SubmitButton>
     </form>
   );
 }

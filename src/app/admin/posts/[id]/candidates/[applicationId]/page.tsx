@@ -7,6 +7,7 @@ import type { ApplicationSnapshot } from "@/lib/ai/screen-candidate";
 import type { Criterion, CriterionResult, Recommendation } from "@/lib/admin/screening";
 import { getRecruiter } from "@/lib/admin/session";
 import { isEmailConfigured } from "@/lib/env";
+import { SubmitButton } from "@/components/submit-button";
 
 const KIND_LABEL: Record<string, string> = {
   hard_requirement: "Hard requirement",
@@ -184,10 +185,10 @@ export default async function CandidatePage({ params, searchParams }: PageProps<
                 <textarea id="body" name="body" rows={12} defaultValue={email.body} required minLength={20} maxLength={5000} className="input" />
               </div>
               <div className="flex flex-wrap items-center gap-3">
-                <button className="btn-ghost">Save draft</button>
-                <button className="btn" formAction={sendOutcomeEmail.bind(null, post.id, application.id)} disabled={!isEmailConfigured}>
+                <SubmitButton className="btn-ghost" working="Saving…">Save draft</SubmitButton>
+                <SubmitButton formAction={sendOutcomeEmail.bind(null, post.id, application.id)} disabled={!isEmailConfigured} working="Sending…">
                   Send to candidate
-                </button>
+                </SubmitButton>
               </div>
               <p className="muted">
                 {isEmailConfigured

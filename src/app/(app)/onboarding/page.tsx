@@ -4,6 +4,7 @@ import { Check, Spark } from "@/components/icons";
 import { Notice, Success } from "@/components/notice";
 import { PreferencesForm } from "@/components/preferences-form";
 import { getUser } from "@/lib/supabase/server";
+import { SubmitButton } from "@/components/submit-button";
 
 const STEPS = [
   { key: "words", label: "In your words" },
@@ -77,7 +78,7 @@ export default async function OnboardingPage({ searchParams }: PageProps<"/onboa
               </label>
             )}
             <div className="flex flex-wrap items-center gap-3">
-              <button className="btn"><Spark /> Set up my search</button>
+              <SubmitButton working="Reading what you wrote…"><Spark /> Set up my search</SubmitButton>
               <Link href="/onboarding?step=prefs" className="btn-quiet">Fill it in myself instead</Link>
             </div>
           </form>
@@ -116,7 +117,7 @@ export default async function OnboardingPage({ searchParams }: PageProps<"/onboa
           <form action={uploadCv} className="panel flex flex-wrap items-center gap-3 p-5 sm:p-6">
             <input type="hidden" name="next" value="/onboarding" />
             <input type="file" name="cv" accept=".pdf,.txt,application/pdf,text/plain" required className="text-sm file:mr-3 file:rounded-lg file:border file:border-line file:bg-raised file:px-3 file:py-2 file:text-sm file:text-ink" />
-            <button className="btn">Read my CV</button>
+            <SubmitButton working="Reading your CV…">Read my CV</SubmitButton>
             <p className="w-full text-sm text-muted">PDF or plain text, up to 4 MB.</p>
           </form>
           <div className="flex flex-wrap gap-3">

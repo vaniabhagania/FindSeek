@@ -6,6 +6,7 @@
 import { indiaEligibility } from "@/lib/india/location";
 import { parsePay, payFromFields, type Pay } from "@/lib/india/pay";
 import { statesQualifications } from "@/lib/india/requirements";
+import { belongsToCompany, isFreeHosting, registered } from "./domains";
 import { scamFlags } from "./scam";
 import type { JobSource } from "./types";
 
@@ -55,7 +56,7 @@ const UNVERIFIABLE: { re: RegExp; why: string }[] = [
   { re: /(^|\.)(instagram\.com|facebook\.com|fb\.com|fb\.me|x\.com|twitter\.com)$/i, why: "a social media post rather than the employer's application page" },
   { re: /(^|\.)linkedin\.com$/i, why: "a LinkedIn post rather than a LinkedIn job listing" },
 ];
-const PERSONAL_EMAIL = /@(gmail|yahoo|ymail|hotmail|outlook|live|rediffmail|protonmail|icloud)\.(com|in|co\.in)\b/i;
+const PERSONAL_EMAIL = /@(?:gmail|googlemail|yahoo|ymail|rocketmail|hotmail|outlook|live|msn|rediffmail|rediff|protonmail|proton|pm|icloud|aol|gmx|zohomail|yandex|mail)\.(?:com|in|co\.in|me|net|ru)\b/i;
 
 const COMPANY_NOISE = /\b(private|pvt|limited|ltd|llp|inc|technologies|technology|tech|solutions|services|software|labs|india|global|the|and|co)\b\.?/gi;
 
@@ -80,13 +81,25 @@ export function checkHiringSource(job: Pick<VerifiableJob, "source" | "company" 
 
   const emailMatch = job.apply_url.match(/^mailto:([^?]+)/i);
   if (emailMatch) {
-    const email = emailMatch[1];
-    if (PERSONAL_EMAIL.test(email)) return { key: "source", label, ok: false, detail: `Applications go to a personal email (${email})` };
-    const domain = email.split("@")[1]?.toLowerCase() ?? "";
-    const matches = companyTokens(job.company).some((t) => domain.includes(t));
-    return matches
-      ? { key: "source", label, ok: true, detail: `Applications go to the company's own email domain (${domain})` }
-      : { key: "source", label, ok: false, detail: `Email domain ${domain} doesn't match ${job.company}` };
+    let raw = emailMatch[1];
+    try {
+      raw = decodeURIComponent(raw);
+    } catch {
+      /* keep it as written */
+    }
+    const addresses = raw.split(/[,;]/).map((a) => a.trim()).filter(Boolean);
+    if (!addresses.length) return { key: "source", label, ok: false, detail: "No application email given" };
+    const tokens = companyTokens(job.company);
+    // Every address must be the company's own; one stray recipient is enough to fail.
+    for (const email of addresses) {
+      if (PERSONAL_EMAIL.test(email)) return { key: "source", label, ok: false, detail: `Applications go to a personal email (${email})` };
+      const domain = email.split("@")[1]?.toLowerCase() ?? "";
+      if (!email.includes("@") || !belongsToCompany(job.company, tokens, domain)) {
+        return { key: "source", label, ok: false, detail: `Email domain ${domain || email} isn't ${job.company}'s own domain` };
+      }
+    }
+    const domain = addresses[0].split("@")[1].toLowerCase();
+    return { key: "source", label, ok: true, detail: `Applications go to the company's own email domain (${registered(domain)?.domain ?? domain})` };
   }
 
   const host = hostOf(job.apply_url);
@@ -94,13 +107,16 @@ export function checkHiringSource(job: Pick<VerifiableJob, "source" | "company" 
   if (LINKEDIN_JOB.test(job.apply_url)) return { key: "source", label, ok: true, detail: "LinkedIn job listing published by a company page" };
   const bad = UNVERIFIABLE.find((u) => u.re.test(host));
   if (bad) return { key: "source", label, ok: false, detail: `The application link is ${bad.why}` };
+  if (isFreeHosting(host)) {
+    return { key: "source", label, ok: false, detail: `${host} is a free website or page builder where anyone can publish under any name` };
+  }
   if (TRUSTED_HOSTS.some((t) => host === t || host.endsWith(`.${t}`))) {
     return { key: "source", label, ok: true, detail: `Published on ${host}` };
   }
-  if (companyTokens(job.company).some((t) => host.includes(t))) {
-    return { key: "source", label, ok: true, detail: `Published on the company's own site (${host})` };
+  if (belongsToCompany(job.company, companyTokens(job.company), host)) {
+    return { key: "source", label, ok: true, detail: `Published on the company's own site (${registered(host)?.domain ?? host})` };
   }
-  return { key: "source", label, ok: false, detail: `${host} isn't ${job.company}'s site or a known hiring platform` };
+  return { key: "source", label, ok: false, detail: `${host} isn't ${job.company}'s website or a known hiring platform` };
 }
 
 export function verifyListing(job: VerifiableJob): Verification {

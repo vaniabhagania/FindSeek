@@ -1,6 +1,13 @@
 // Reads pay from Indian job ads ("₹12-18 LPA", "CTC 8 lakhs", "Stipend ₹15,000/month",
-// "INR 6,00,000 - 9,00,000 p.a.") and normalises it to annual INR, so a ₹25k/month
-// internship and a 6 LPA job can be compared against what the user expects.
+// "Salary: 25000-30000 per month") and normalises it to annual INR, so a ₹25k/month internship
+// and a 6 LPA job can be compared against what the user expects.
+//
+// An amount only counts as pay when the words around it say so. A rupee figure next to "insurance",
+// "bond", "registration fee" or "raised" is not a salary, and a bare number only counts straight
+// after a pay word ("Salary: 25000-30000"). Every step looks at a short window around one number,
+// so the time taken grows in a straight line with the text, never with its square.
+
+import { MAX_PARSE_CHARS } from "@/lib/limits";
 
 export interface Pay {
   minAnnualInr: number;
@@ -12,53 +19,137 @@ export interface Pay {
 }
 
 const CUR = String.raw`(?:₹|rs\.?|inr)`;
-const NUM = String.raw`(\d+(?:[.,]\d+)*)`;
-const DASH = String.raw`\s*(?:-|–|—|to)\s*`;
+
+/** One number: Indian grouping (4,50,000), plain digits, or decimals. Never starts inside another number. */
+const NUMBER = new RegExp(String.raw`(?<![\w.,])(?:(${CUR})\s{0,2})?(\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)`, "gi");
+
+// What follows a number, each matched at one fixed position, over a short slice.
+const UNIT = /^\s{0,2}(lpa|lakhs?|lacs?|crores?|cr(?![a-z])|k(?![a-z])|l(?![a-z]))/i;
+const RANGE = new RegExp(String.raw`^\s{0,3}(?:-|–|—|to)\s{0,3}(?:(${CUR})\s{0,2})?(\d{1,3}(?:,\d{2,3})+(?:\.\d+)?|\d+(?:\.\d+)?)`, "i");
+const PERIOD = /^\s{0,2}(?:(?:\/|per\s|a\s|p\.?\s?)\s{0,2})?(month(?:ly)?|mo(?![a-z])|pm(?![a-z])|p\.m\.|annum|year(?:ly)?|yr(?![a-z])|p\.a\.?|pa(?![a-z]))/i;
+
+const UNPAID = /\b(?:unpaid(?!\s+(?:leave|notice|holiday|time off|vacation|overtime|break))(?:\s+internship)?|no stipend|without (?:a )?stipend)\b/i;
+
+/** Words that say the number after them is what the employer pays. */
+const PAY_WORD = /\b(?:salary|salaries|ctc|stipend|package|compensation|remuneration|wages?|honorarium|earnings?|earn|in[- ]hand|take[- ]home|pay\s*(?:range|scale|band|structure)|pay(?=\s*[:\-–]))\b/gi;
+/** What may sit between a pay word and its number: "Salary: 25000", "CTC of up to", "Stipend from". */
+const DIRECT = /^[\s:\-–—=(]*(?:(?:is|of|up\s*to|upto|around|approx\.?|about|from|starting(?:\s+(?:at|from))?|range|between|at)[\s:\-–—=(]*)*$/i;
+
+/** Words that make a nearby amount something other than pay: cover, fees, funding, perks. */
+const NOT_PAY_WORD = String.raw`insurance|insured|cover(?:age)?|mediclaim|bond|fees?|charges?|deposit|funding|funded|raised|series\s+[a-e]|valuation|revenue|turnover|investment|investors?|penalt(?:y|ies)|fine|loan|advance|refundable|registration|premium|bonus|incentives?|allowances?|reimburse\w*|relocation|gratuity|esops?|stocks?|equity|commission|referral|subscription|membership|tuition|kit|laptop|uniform|processing|enrol\w*|course|security\s+(?:amount|money)`;
+const NOT_PAY_BEFORE = new RegExp(String.raw`\b(?:${NOT_PAY_WORD})\b`, "i");
+/**
+ * Right after the amount, when the amount describes that thing: "₹5 lakh health insurance",
+ * "₹999 registration fee", "5L term life cover". "plus ESOPs" or "and a bonus" after a real salary
+ * adds something else and does not disqualify it.
+ */
+const NOT_PAY_AFTER = new RegExp(
+  String.raw`^[\s,:\-]{0,3}(?:(?!(?:plus|and|with|including|excluding|or)\b)[a-z]+\s+){0,2}(?:insurance|insured|cover(?:age)?|mediclaim|bonds?|fees?|charges?|deposit|funding|funded|valuation|revenue|turnover|penalt(?:y|ies)|fine|loan|premium|registration|refundable|security|round|investment)\b`,
+  "i",
+);
+
+const FOREIGN_BEFORE = /(?:[$€£¥]|\b(?:usd|eur|gbp|aud|cad|sgd|aed)|\b[usac]\$)\s{0,2}$/i;
+const FOREIGN_AFTER = /^\s{0,2}(?:usd|eur|gbp|aud|cad|sgd|aed|dollars?|euros?|pounds?)\b/i;
+
+/** Text before `index`, back to the start of its sentence or line, at most 70 characters. */
+function clauseBefore(text: string, index: number): string {
+  const from = text.slice(Math.max(0, index - 70), index);
+  const cut = Math.max(from.lastIndexOf("\n"), from.lastIndexOf(";"), from.lastIndexOf("|"), from.lastIndexOf("•"), from.lastIndexOf(". "));
+  return cut >= 0 ? from.slice(cut + 1) : from;
+}
+
+function clauseAfter(text: string, index: number): string {
+  const to = text.slice(index, index + 50);
+  const cut = to.search(/[\n;|•]|\.\s/);
+  return cut >= 0 ? to.slice(0, cut) : to;
+}
+
+const scale = (unit: string | undefined) => {
+  const u = (unit ?? "").toLowerCase();
+  if (!u) return { factor: 1, annual: false };
+  if (u === "k") return { factor: 1e3, annual: false };
+  if (u.startsWith("cr")) return { factor: 1e7, annual: true };
+  return { factor: 1e5, annual: true }; // lpa, lakh, lac, l
+};
 
 const num = (s: string) => Number(s.replace(/,/g, ""));
 
-const LAKH_RE = new RegExp(
-  `${CUR}?\\s*${NUM}(?:${DASH}${CUR}?\\s*${NUM})?\\s*(lpa|lakhs?|lacs?|l(?![a-z])|crores?|cr(?![a-z]))(\\s*(?:per annum|p\\.?a\\.?|/\\s*annum|a year|per year))?`,
-  "i",
-);
-const AMOUNT_RE = new RegExp(
-  `${CUR}\\s*${NUM}\\s*(k)?(?:${DASH}${CUR}?\\s*${NUM}\\s*(k)?)?\\s*(?:/|per|a|p\\.?)?\\s*(month|mo\\b|pm\\b|p\\.m\\.|annum|year|yr|p\\.?a\\.?)?`,
-  "i",
-);
-const STIPEND_RE = /stipend[^.\n₹\d]{0,25}(?:₹|rs\.?|inr)?\s*(\d+(?:,\d+)*)\s*(k)?(?:\s*(?:-|–|to)\s*(?:₹|rs\.?|inr)?\s*(\d+(?:,\d+)*)\s*(k)?)?/i;
-const UNPAID_RE = /\b(unpaid( internship)?|no stipend|without stipend)\b/i;
+export function parsePay(input: string): Pay | null {
+  const text = input.length > MAX_PARSE_CHARS ? input.slice(0, MAX_PARSE_CHARS) : input;
 
-export function parsePay(text: string): Pay | null {
-  if (UNPAID_RE.test(text)) {
-    return { minAnnualInr: 0, maxAnnualInr: 0, period: "month", source: text.match(UNPAID_RE)![0], unpaid: true };
-  }
+  const unpaid = text.match(UNPAID);
+  if (unpaid) return { minAnnualInr: 0, maxAnnualInr: 0, period: "month", source: unpaid[0], unpaid: true };
 
-  const lakh = text.match(LAKH_RE);
-  if (lakh) {
-    const unit = lakh[3].toLowerCase().startsWith("c") ? 1e7 : 1e5;
-    const lo = num(lakh[1]) * unit;
-    const hi = (lakh[2] ? num(lakh[2]) : num(lakh[1])) * unit;
-    // "1 L" is a plausible salary; "500 L" is not. Guard against matching unrelated numbers.
-    if (lo > 0 && hi >= lo && hi <= 5e8) return { minAnnualInr: lo, maxAnnualInr: hi, period: "year", source: lakh[0].trim() };
-  }
+  let looked = 0;
+  for (const m of text.matchAll(NUMBER)) {
+    if (++looked > 600) break; // a real ad has a few dozen numbers
+    const start = m.index;
+    const hasCurrency = Boolean(m[1]);
+    if (FOREIGN_BEFORE.test(text.slice(Math.max(0, start - 6), start))) continue;
 
-  const stipend = text.match(STIPEND_RE);
-  if (stipend) {
-    const lo = num(stipend[1]) * (stipend[2] ? 1000 : 1);
-    const hi = (stipend[3] ? num(stipend[3]) * (stipend[4] ? 1000 : 1) : lo);
-    if (lo >= 500 && hi >= lo) return { minAnnualInr: lo * 12, maxAnnualInr: hi * 12, period: "month", source: stipend[0].trim() };
-  }
+    // One number, or a range like "10-15", with the unit written after either of them ("12-18 LPA").
+    const first = num(m[2]);
+    let end = start + m[0].length;
+    const unitA = text.slice(end, end + 12).match(UNIT);
+    if (unitA) end += unitA[0].length;
 
-  const amount = text.match(AMOUNT_RE);
-  if (amount) {
-    const lo = num(amount[1]) * (amount[2] ? 1000 : 1);
-    const hi = amount[3] ? num(amount[3]) * (amount[4] ? 1000 : 1) : lo;
-    if (lo >= 500 && hi >= lo) {
-      const p = (amount[5] ?? "").toLowerCase();
-      const monthly = /^(month|mo|pm|p\.m\.)/.test(p) || (!p && hi < 2e5);
-      const factor = monthly ? 12 : 1;
-      return { minAnnualInr: lo * factor, maxAnnualInr: hi * factor, period: monthly ? "month" : "year", source: amount[0].trim() };
+    let lo = first * scale(unitA?.[1]).factor;
+    let hi = lo;
+    let unitName = unitA?.[1];
+    const range = text.slice(end, end + 30).match(RANGE);
+    if (range) {
+      const afterRange = end + range[0].length;
+      const unitB = text.slice(afterRange, afterRange + 12).match(UNIT);
+      const loValue = first * scale(unitA?.[1] ?? unitB?.[1]).factor;
+      const hiValue = num(range[2]) * scale(unitB?.[1] ?? unitA?.[1]).factor;
+      if (hiValue >= loValue) {
+        lo = loValue;
+        hi = hiValue;
+        unitName = unitB?.[1] ?? unitA?.[1];
+        end = afterRange + (unitB?.[0].length ?? 0);
+      }
+      // otherwise "₹15,000 - 20 hours a week": the second number isn't part of the pay
     }
+    const unit = scale(unitName);
+
+    const periodMatch = text.slice(end, end + 20).match(PERIOD);
+    if (periodMatch) end += periodMatch[0].length;
+    const period = (periodMatch?.[1] ?? "").toLowerCase();
+    const named = /^(month|mo|pm|p\.m\.)/.test(period) ? "month" : period ? "year" : "";
+
+    if (FOREIGN_AFTER.test(text.slice(end, end + 12))) continue;
+
+    // Do the words around the number say it is pay?
+    const before = clauseBefore(text, start);
+    const lastWord = [...before.matchAll(PAY_WORD)].at(-1);
+    const sincePayWord = (lastWord ? before.slice(lastWord.index + lastWord[0].length) : before).replace(/\([^)]*\)/g, " ");
+    if (NOT_PAY_BEFORE.test(sincePayWord)) continue;
+    if (NOT_PAY_AFTER.test(clauseAfter(text, end))) continue;
+
+    const direct = Boolean(lastWord) && DIRECT.test(sincePayWord);
+    const strongUnit = (unitName ?? "").toLowerCase() === "lpa";
+    const evidence =
+      direct ||
+      strongUnit ||
+      (Boolean(lastWord) && (hasCurrency || Boolean(periodMatch) || unit.annual)) ||
+      (hasCurrency && Boolean(periodMatch));
+    if (!evidence) continue;
+
+    // A bare 2025 after "Salary review in" is a year, not a salary.
+    if (!hasCurrency && !unitName && !periodMatch && lo >= 1900 && lo <= 2100) continue;
+    // ₹500 a month is the floor; ₹50 crore a year the ceiling.
+    if (unit.annual ? lo <= 0 : lo < 500) continue;
+
+    const monthly = named === "month" || (!named && !unit.annual && hi < 2e5);
+    const factor = monthly ? 12 : 1;
+    if (hi * factor > 5e8) continue;
+
+    return {
+      minAnnualInr: lo * factor,
+      maxAnnualInr: hi * factor,
+      period: monthly ? "month" : "year",
+      source: text.slice(start, end).trim(),
+    };
   }
   return null;
 }

@@ -37,3 +37,11 @@ export const Building = (p: IconProps) => <Svg {...p}><path d="M3 14V3.5h6.5V14M
 export const External = (p: IconProps) => <Svg {...p}><path d="M9 2.5h4.5V7M13.5 2.5 7.5 8.5M12 9.5V13a.5.5 0 0 1-.5.5h-8.5A.5.5 0 0 1 2.5 13V4.5a.5.5 0 0 1 .5-.5H6.5" /></Svg>;
 export const Flag = (p: IconProps) => <Svg {...p}><path d="M3.5 14V2.5M3.5 3h8l-1.5 3 1.5 3h-8" /></Svg>;
 export const Spark = (p: IconProps) => <Svg {...p}><path d="M8 2v3M8 11v3M2 8h3M11 8h3M4 4l1.8 1.8M10.2 10.2 12 12M12 4l-1.8 1.8M5.8 10.2 4 12" /></Svg>;
+
+/** A quarter-circle that turns while something is working. Stands still for people who ask for less motion. */
+export const Spinner = (p: IconProps) => (
+  <Svg {...p} className={`motion-safe:animate-spin ${p.className ?? ""}`}>
+    <circle cx="8" cy="8" r="5.5" opacity="0.25" />
+    <path d="M8 2.5a5.5 5.5 0 0 1 5.5 5.5" />
+  </Svg>
+);

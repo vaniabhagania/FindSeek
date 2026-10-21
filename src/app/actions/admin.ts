@@ -3,7 +3,7 @@
 import { randomUUID } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { checkCriterionText } from "@/lib/admin/criteria-guard";
+import { criterionViolation } from "@/lib/admin/criteria-guard";
 import { buildOutcomeEmail } from "@/lib/admin/emails";
 import { evaluate, type Criterion, type CriterionKind } from "@/lib/admin/screening";
 import { getRecruiter } from "@/lib/admin/session";
@@ -13,6 +13,8 @@ import { logAiAction } from "@/lib/data/profile";
 import { sendEmail } from "@/lib/email/send";
 import { isAiConfigured, isEmailConfigured } from "@/lib/env";
 import { enrichJob } from "@/lib/jobs/enrich";
+import { MAX_POST_CHARS } from "@/lib/limits";
+import { noticeUrl, type NoticeCode } from "@/lib/notices";
 import { createServiceClient } from "@/lib/supabase/server";
 
 // Server Actions are reachable by direct POST, so each one re-checks that the caller acts for an
@@ -23,9 +25,9 @@ const SCREENINGS_PER_RUN = 10;
 const MAX_CRITERIA_PER_POST = 30;
 const CRITERION_KINDS: CriterionKind[] = ["hard_requirement", "must_have", "nice_to_have"];
 
-/** Redirects back to `path` with a message the Notice component shows. */
-function fail(path: string, message: string): never {
-  redirect(`${path}?error=${encodeURIComponent(message)}`);
+/** Redirects back to `path` with a code the Notice component looks up. Never put free text in here. */
+function fail(path: string, code: NoticeCode, extra?: Record<string, string>): never {
+  redirect(noticeUrl(path, code, extra));
 }
 
 async function requireRecruiter() {
@@ -66,13 +68,13 @@ export async function createEmployer(formData: FormData) {
   if (employer) redirect("/admin");
 
   const name = text(formData.get("name"));
-  if (name.length < 2 || name.length > 120) fail("/admin", "Enter your organisation's name (2 to 120 characters).");
+  if (name.length < 2 || name.length > 120) fail("/admin", "org_name");
 
   const id = randomUUID();
   const { error: employerError } = await supabase.from("employers").insert({ id, name, created_by: user.id });
-  if (employerError) fail("/admin", "Couldn't create the employer account. Please try again.");
+  if (employerError) fail("/admin", "employer_create");
   const { error: memberError } = await supabase.from("employer_members").insert({ employer_id: id, user_id: user.id, role: "owner" });
-  if (memberError) fail("/admin", "Couldn't finish setting up the employer account. Please try again.");
+  if (memberError) fail("/admin", "employer_setup");
 
   revalidatePath("/admin");
   redirect("/admin");
@@ -86,8 +88,8 @@ export async function createPost(formData: FormData) {
   const r = await requireRecruiter();
   const title = text(formData.get("title"));
   const description = text(formData.get("description"));
-  if (title.length < 2 || title.length > 160) fail("/admin/posts/new", "Give the opening a title (2 to 160 characters).");
-  if (description.length < 40) fail("/admin/posts/new", "Describe the role in at least 40 characters so candidates can judge their fit.");
+  if (title.length < 2 || title.length > 160) fail("/admin/posts/new", "post_title");
+  if (description.length < 40 || description.length > MAX_POST_CHARS) fail("/admin/posts/new", "post_description");
 
   const work = text(formData.get("work_style"));
   const unit = text(formData.get("pay_unit")) === "month" ? "month" : "year";
@@ -98,8 +100,8 @@ export async function createPost(formData: FormData) {
   };
   const payMin = toAnnual(formData.get("pay_min"));
   const payMax = toAnnual(formData.get("pay_max")) ?? payMin;
-  if (payMin == null) fail("/admin/posts/new", "State the pay. Every opening on FindSeek shows a salary or stipend.");
-  if (payMax != null && payMin != null && payMax < payMin) fail("/admin/posts/new", "The top of the pay range is below the bottom.");
+  if (payMin == null) fail("/admin/posts/new", "post_pay");
+  if (payMax != null && payMin != null && payMax < payMin) fail("/admin/posts/new", "post_pay_range");
   const { data: post, error } = await r.supabase
     .from("job_posts")
     .insert({
@@ -115,7 +117,7 @@ export async function createPost(formData: FormData) {
     })
     .select("id")
     .single();
-  if (error || !post) fail("/admin/posts/new", "Couldn't save the opening. Please try again.");
+  if (error || !post) fail("/admin/posts/new", "post_save");
 
   revalidatePath("/admin");
   redirect(`/admin/posts/${post.id}`);
@@ -131,7 +133,7 @@ export async function publishPost(postId: string) {
   const path = `/admin/posts/${post.id}`;
 
   const admin = createServiceClient();
-  if (!admin) fail(path, "SUPABASE_SERVICE_ROLE_KEY isn't set, so openings can't be published yet.");
+  if (!admin) fail(path, "service_key");
 
   const jobId: string = post.job_id ?? randomUUID();
   const now = new Date().toISOString();
@@ -152,8 +154,8 @@ export async function publishPost(postId: string) {
     posted_at: post.published_at ?? now,
   });
   if (enriched.verification_status !== "verified") {
-    const missing = enriched.verification_checks.filter((c) => !c.ok).map((c) => `${c.label}: ${c.detail}`);
-    fail(path, `This opening can't be published yet. ${missing.join(". ")}.`);
+    const failed = enriched.verification_checks.filter((c) => !c.ok).map((c) => c.key);
+    fail(path, "unpublishable", { checks: failed.join(",") });
   }
   const { error: jobError } = await admin.from("jobs").upsert(
     {
@@ -166,14 +168,14 @@ export async function publishPost(postId: string) {
     },
     { onConflict: "source,external_id" },
   );
-  if (jobError) fail(path, "Couldn't publish the opening. Please try again.");
+  if (jobError) fail(path, "publish_failed");
 
   const { error: postError } = await admin
     .from("job_posts")
     .update({ job_id: jobId, status: "open", published_at: post.published_at ?? new Date().toISOString() })
     .eq("id", post.id)
     .eq("employer_id", r.employer.id);
-  if (postError) fail(path, "Couldn't publish the opening. Please try again.");
+  if (postError) fail(path, "publish_failed");
 
   revalidatePath(path);
   revalidatePath("/admin");
@@ -212,17 +214,17 @@ export async function addCriterion(postId: string, formData: FormData) {
 
   const kind = text(formData.get("kind")) as CriterionKind;
   const criterion = text(formData.get("text"));
-  if (!CRITERION_KINDS.includes(kind)) fail(path, "Choose what kind of criterion this is.");
-  if (criterion.length < 3 || criterion.length > 300) fail(path, "A criterion needs 3 to 300 characters.");
-  const blocked = checkCriterionText(criterion);
-  if (blocked) fail(path, blocked);
+  if (!CRITERION_KINDS.includes(kind)) fail(path, "criterion_kind");
+  if (criterion.length < 3 || criterion.length > 300) fail(path, "criterion_length");
+  const blocked = criterionViolation(criterion);
+  if (blocked !== null) fail(path, `criterion_${blocked}`);
 
   const { count } = await r.supabase
     .from("screening_criteria").select("id", { count: "exact", head: true }).eq("job_post_id", post.id);
-  if ((count ?? 0) >= MAX_CRITERIA_PER_POST) fail(path, `An opening can have at most ${MAX_CRITERIA_PER_POST} criteria.`);
+  if ((count ?? 0) >= MAX_CRITERIA_PER_POST) fail(path, "criterion_max");
 
   const { error } = await r.supabase.from("screening_criteria").insert({ job_post_id: post.id, kind, text: criterion });
-  if (error) fail(path, "Couldn't save the criterion. Please try again.");
+  if (error) fail(path, "criterion_save");
 
   await resetUndecidedScreenings(r, post.id);
   revalidatePath(path);
@@ -246,12 +248,12 @@ export async function screenCandidates(postId: string) {
   const r = await requireRecruiter();
   const post = await loadOwnPost(r, postId);
   const path = `/admin/posts/${post.id}`;
-  if (!isAiConfigured) fail(path, "ANTHROPIC_API_KEY isn't set, so candidates can't be screened yet.");
+  if (!isAiConfigured) fail(path, "ai_unconfigured");
 
   const { data: criteriaRows } = await r.supabase
     .from("screening_criteria").select("id, kind, text").eq("job_post_id", post.id).order("created_at");
   const criteria = (criteriaRows ?? []) as Criterion[];
-  if (!criteria.length) fail(path, "Add at least one criterion before screening candidates.");
+  if (!criteria.length) fail(path, "no_criteria");
 
   const { data: apps } = await r.supabase
     .from("post_applications").select("id, snapshot").eq("job_post_id", post.id).eq("status", "submitted")
@@ -299,13 +301,13 @@ export async function decideCandidate(postId: string, applicationId: string, for
   const path = `/admin/posts/${post.id}/candidates/${application.id}`;
 
   const decision = text(formData.get("decision"));
-  if (decision !== "selected" && decision !== "not_selected") fail(path, "Choose selected or not selected.");
+  if (decision !== "selected" && decision !== "not_selected") fail(path, "decision_kind");
   const note = text(formData.get("note")).slice(0, 1000);
-  if (application.status === "withdrawn") fail(path, "This candidate has withdrawn their application.");
+  if (application.status === "withdrawn") fail(path, "withdrawn");
 
   const { data: existingEmail } = await r.supabase
     .from("candidate_emails").select("id, kind, status").eq("post_application_id", application.id).maybeSingle();
-  if (existingEmail?.status === "sent") fail(path, "The outcome email has already been sent, so the decision can't be changed.");
+  if (existingEmail?.status === "sent") fail(path, "email_locked");
 
   const { data: screening } = await r.supabase
     .from("candidate_screenings").select("recommendation").eq("post_application_id", application.id).maybeSingle();
@@ -321,7 +323,7 @@ export async function decideCandidate(postId: string, applicationId: string, for
     },
     { onConflict: "post_application_id" },
   );
-  if (error) fail(path, "Couldn't record the decision. Please try again.");
+  if (error) fail(path, "decision_save");
   await r.supabase.from("post_applications").update({ status: decision }).eq("id", application.id);
 
   // Draft the outcome email, unless a draft for this same outcome already exists (it may have been edited).
@@ -347,12 +349,12 @@ export async function decideCandidate(postId: string, applicationId: string, for
 async function persistDraft(r: Recruiter, applicationId: string, path: string, formData: FormData) {
   const subject = text(formData.get("subject"));
   const body = text(formData.get("body"));
-  if (!subject || subject.length > 200) fail(path, "The subject needs 1 to 200 characters.");
-  if (body.length < 20 || body.length > 5000) fail(path, "The email body needs 20 to 5,000 characters.");
+  if (!subject || subject.length > 200) fail(path, "draft_subject");
+  if (body.length < 20 || body.length > 5000) fail(path, "draft_body");
 
   const { error } = await r.supabase
     .from("candidate_emails").update({ subject, body }).eq("post_application_id", applicationId).neq("status", "sent");
-  if (error) fail(path, "Couldn't save the draft. Please try again.");
+  if (error) fail(path, "draft_save");
   return { subject, body };
 }
 
@@ -375,17 +377,17 @@ export async function sendOutcomeEmail(postId: string, applicationId: string, fo
     r.supabase.from("candidate_emails").select("*").eq("post_application_id", application.id).maybeSingle(),
     r.supabase.from("hiring_decisions").select("decision").eq("post_application_id", application.id).maybeSingle(),
   ]);
-  if (!email || !decision) fail(path, "Record a decision first.");
-  if (email.status === "sent") fail(path, "This email has already been sent.");
-  if (email.kind !== decision.decision) fail(path, "The draft doesn't match the decision. Record the decision again to regenerate it.");
-  if (!isEmailConfigured) fail(path, "RESEND_API_KEY and EMAIL_FROM aren't set, so emails can't be sent yet.");
+  if (!email || !decision) fail(path, "no_decision");
+  if (email.status === "sent") fail(path, "email_sent");
+  if (email.kind !== decision.decision) fail(path, "email_mismatch");
+  if (!isEmailConfigured) fail(path, "email_unconfigured");
   const content = formData?.has("subject") ? await persistDraft(r, application.id, path, formData) : { subject: email.subject, body: email.body };
 
   // The candidate's address lives in auth, not in our tables. Fetch it only now, only to send.
   const admin = createServiceClient();
   const { data: candidate } = admin ? await admin.auth.admin.getUserById(application.user_id) : { data: null };
   const to = candidate?.user?.email;
-  if (!to) fail(path, "Couldn't find an email address for this candidate.");
+  if (!to) fail(path, "no_recipient");
 
   try {
     await sendEmail({ to, subject: content.subject, text: content.body, replyTo: r.user.email });
@@ -394,7 +396,7 @@ export async function sendOutcomeEmail(postId: string, applicationId: string, fo
       .update({ status: "failed", error: e instanceof Error ? e.message.slice(0, 300) : "Send failed" })
       .eq("id", email.id);
     revalidatePath(path);
-    fail(path, "The email provider rejected the message. Check the sender settings and try again.");
+    fail(path, "email_rejected");
   }
 
   await r.supabase.from("candidate_emails")

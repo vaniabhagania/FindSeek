@@ -38,13 +38,22 @@ const RULES: { label: string; test: RegExp }[] = [
   },
 ];
 
+/** The names of the protected characteristics checked, in the order the rules run. */
+export const CRITERION_LABELS: readonly string[] = RULES.map((r) => r.label);
+
+/** Index into CRITERION_LABELS of the first rule the text breaks, or null if it is fine. */
+export function criterionViolation(text: string): number | null {
+  const i = RULES.findIndex((r) => r.test.test(text));
+  return i === -1 ? null : i;
+}
+
 /**
  * Returns a message explaining why the criterion cannot be used, or null if it is fine.
  * The message suggests a lawful alternative, because most of these have one
  * (e.g. "native speaker" -> "fluent in German, C1 or above").
  */
 export function checkCriterionText(text: string): string | null {
-  const hit = RULES.find((r) => r.test.test(text));
-  if (!hit) return null;
-  return `This criterion appears to refer to ${hit.label}, which can't be used to screen candidates. State the job-related requirement instead (for example a skill, a certification, a language level, or the right to work in a country).`;
+  const i = criterionViolation(text);
+  if (i === null) return null;
+  return `This criterion appears to refer to ${RULES[i].label}, which can't be used to screen candidates. State the job-related requirement instead (for example a skill, a certification, a language level, or the right to work in a country).`;
 }

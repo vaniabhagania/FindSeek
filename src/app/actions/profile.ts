@@ -7,6 +7,8 @@ import { readIntake } from "@/lib/ai/intake";
 import { parseCv } from "@/lib/ai/parse-cv";
 import { normaliseCity } from "@/lib/india/location";
 import { fromMonth, logAiAction } from "@/lib/data/profile";
+import { requireQuota } from "@/lib/data/quota";
+import { MAX_INTAKE_CHARS } from "@/lib/limits";
 import { getUser } from "@/lib/supabase/server";
 
 const MAX_CV_BYTES = 4 * 1024 * 1024; // Vercel functions accept at most 4.5 MB per request
@@ -89,6 +91,7 @@ export async function readMyWords(formData: FormData) {
   const { supabase, user } = await requireUser();
   const text = String(formData.get("intake") ?? "").trim();
   if (text.length < 20) redirect("/onboarding?error=intake");
+  if (text.length > MAX_INTAKE_CHARS) redirect("/onboarding?error=intake_long");
   if (formData.get("consent_ai") === "on") {
     await supabase.from("profiles").update({ consent_ai_processing_at: new Date().toISOString() })
       .eq("id", user.id).is("consent_ai_processing_at", null);
@@ -96,6 +99,7 @@ export async function readMyWords(formData: FormData) {
   const { data: profile } = await supabase.from("profiles").select("consent_ai_processing_at").eq("id", user.id).single();
   if (!profile?.consent_ai_processing_at) redirect("/onboarding?error=consent");
 
+  await requireQuota(supabase, "read_intake", "/onboarding");
   const intake = await readIntake(text);
   await supabase.from("profiles").update({
     intake_text: text,
@@ -139,10 +143,11 @@ export async function uploadCv(formData: FormData) {
   const isText = file.type.startsWith("text/") || file.name.toLowerCase().endsWith(".txt");
   if (!isPdf && !isText) redirect(`${base}error=type`);
 
+  await requireQuota(supabase, "parse_cv", base.replace(/[?&]$/, ""));
   const bytes = Buffer.from(await file.arrayBuffer());
   const path = `${user.id}/${Date.now()}-${file.name.replace(/[^\w.-]/g, "_")}`;
   const { error: storageError } = await supabase.storage.from("cvs").upload(path, bytes, { contentType: file.type || undefined });
-  if (storageError) redirect(`${base}error=${encodeURIComponent(storageError.message)}`);
+  if (storageError) redirect(`${base}error=upload`);
 
   const parsed = await parseCv(isPdf ? { pdfBase64: bytes.toString("base64") } : { text: bytes.toString("utf8") });
 

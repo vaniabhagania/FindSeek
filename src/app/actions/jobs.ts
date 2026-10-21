@@ -8,12 +8,15 @@ import { extractListing } from "@/lib/ai/extract-listing";
 import { scoreMatch } from "@/lib/ai/score-match";
 import { tailorCv } from "@/lib/ai/tailor-cv";
 import { keywordScore, loadVerifiedProfile, logAiAction, preferencesOf } from "@/lib/data/profile";
+import { requireQuota } from "@/lib/data/quota";
 import { enrichJob } from "@/lib/jobs/enrich";
 import { JOB_FEED_COLUMNS } from "@/lib/jobs/feed";
 import { fitChecks, fitSummary } from "@/lib/jobs/fit";
 import { checkStillOpen } from "@/lib/jobs/liveness";
 import { looksRemote } from "@/lib/jobs/text";
 import type { NormalizedJob } from "@/lib/jobs/types";
+import { MAX_POST_CHARS } from "@/lib/limits";
+import { noticeUrl, type NoticeCode } from "@/lib/notices";
 import { createServiceClient, getUser } from "@/lib/supabase/server";
 
 const MATCHES_PER_RUN = 8;
@@ -61,6 +64,7 @@ export async function findMatches() {
     .sort((a, b) => b.kw - a.kw)
     .slice(0, MATCHES_PER_RUN);
 
+  if (candidates.length) await requireQuota(supabase, "find_matches", "/jobs");
   const results = await Promise.allSettled(
     candidates.map(async ({ job }) => {
       const match = await scoreMatch(verified, job);
@@ -103,6 +107,7 @@ export async function tailorForJob(jobId: string) {
     redirect(`/jobs/${jobId}?error=closed`);
   }
 
+  await requireQuota(supabase, "tailor_cv", `/jobs/${jobId}`);
   const { data: application } = await supabase
     .from("applications")
     .upsert({ user_id: user.id, job_id: jobId, status: "tailoring" }, { onConflict: "user_id,job_id" })
@@ -149,11 +154,12 @@ function applyTarget(link: string | null): string {
  * private to the user; held listings show exactly what's missing.
  */
 export async function submitListing(formData: FormData) {
-  const { user } = await requireReadyUser();
-  const fail = (code: string) => redirect(`/jobs/add?error=${code}`);
+  const { supabase, user } = await requireReadyUser();
+  const fail = (code: NoticeCode) => redirect(noticeUrl("/jobs/add", code));
 
   const post = String(formData.get("post") ?? "").trim();
   if (post.length < 120) fail("post");
+  if (post.length > MAX_POST_CHARS) fail("post_long");
   const seenOn = String(formData.get("seen_on") ?? "other");
   const sourceUrl = String(formData.get("source_url") ?? "").trim();
   const typedLink = String(formData.get("apply_link") ?? "").trim();
@@ -161,6 +167,7 @@ export async function submitListing(formData: FormData) {
   const admin = createServiceClient();
   if (!admin) fail("setup");
 
+  await requireQuota(supabase, "bring_job", "/jobs/add");
   const extracted = await extractListing(post);
   if (!extracted.is_job_post) fail("notjob");
 
@@ -256,15 +263,15 @@ export async function markApplied(jobId: string, applicationId: string) {
  */
 export async function submitToEmployer(jobId: string, applicationId: string, formData: FormData) {
   const { supabase, user, profile } = await requireReadyUser();
-  const back = (error: string) => redirect(`/jobs/${jobId}?error=${encodeURIComponent(error)}`);
+  const back = (code: NoticeCode) => redirect(noticeUrl(`/jobs/${jobId}`, code));
 
   if (formData.get("consent_share") !== "on" || formData.get("consent_screening") !== "on") {
-    back("Tick both boxes to confirm you agree to share your CV and to AI-assisted screening.");
+    back("consent_both");
   }
 
   const { data: post } = await supabase.from("job_posts").select("id, status").eq("job_id", jobId).maybeSingle();
   if (!post) redirect(`/jobs/${jobId}`);
-  if (post.status !== "open") back("This opening is closed and no longer accepting applications.");
+  if (post.status !== "open") back("post_closed");
 
   const { data: application } = await supabase
     .from("applications").select("id").eq("id", applicationId).eq("user_id", user.id).maybeSingle();
@@ -272,7 +279,7 @@ export async function submitToEmployer(jobId: string, applicationId: string, for
 
   const { data: existing } = await supabase
     .from("post_applications").select("id").eq("job_post_id", post.id).eq("user_id", user.id).maybeSingle();
-  if (existing) back("You've already applied to this opening.");
+  if (existing) back("already_applied");
 
   const monthStart = new Date();
   monthStart.setUTCDate(1);
@@ -297,7 +304,7 @@ export async function submitToEmployer(jobId: string, applicationId: string, for
     consent_shared_at: now,
     consent_ai_screening_at: now,
   });
-  if (error) back("Couldn't submit your application. Please try again.");
+  if (error) back("apply_failed");
 
   await supabase.from("applications").update({ status: "applied", applied_at: now }).eq("id", application.id);
   revalidatePath("/tracker");

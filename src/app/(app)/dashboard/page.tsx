@@ -6,6 +6,7 @@ import { preferencesOf } from "@/lib/data/profile";
 import { JOB_FEED_COLUMNS } from "@/lib/jobs/feed";
 import { fitChecks, fitSummary, type FitJob } from "@/lib/jobs/fit";
 import { getUser } from "@/lib/supabase/server";
+import { SubmitButton } from "@/components/submit-button";
 
 export default async function Dashboard() {
   const { supabase, user } = await getUser();
@@ -57,7 +58,7 @@ export default async function Dashboard() {
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-accent/30 bg-accent-soft px-5 py-4">
           <p className="text-[15px]">{next.text}</p>
           {"action" in next ? (
-            <form action={findMatches}><button className="btn">{next.cta}</button></form>
+            <form action={findMatches}><SubmitButton working="Scoring new jobs…">{next.cta}</SubmitButton></form>
           ) : (
             <Link href={next.href} className="btn">{next.cta}</Link>
           )}

@@ -10,6 +10,7 @@ import { JOB_FEED_COLUMNS } from "@/lib/jobs/feed";
 import { fitChecks, fitSummary, type FitJob } from "@/lib/jobs/fit";
 import { feedCoverage } from "@/lib/jobs/coverage";
 import { getUser } from "@/lib/supabase/server";
+import { SubmitButton } from "@/components/submit-button";
 
 const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v) ?? "";
 
@@ -95,7 +96,7 @@ export default async function JobsPage({ searchParams }: PageProps<"/jobs">) {
         </div>
         <div className="flex gap-2">
           <Link href="/jobs/add" className="btn-ghost"><Plus /> Bring a job</Link>
-          <form action={findMatches}><button className="btn">Find new matches</button></form>
+          <form action={findMatches}><SubmitButton working="Scoring new jobs…">Find new matches</SubmitButton></form>
         </div>
       </header>
 

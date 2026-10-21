@@ -1,29 +1,36 @@
 // Pulls the hard facts candidates filter on out of free-text ads:
 // experience range, notice period, job type and whether qualifications are stated at all.
 
+import { MAX_PARSE_CHARS } from "@/lib/limits";
+
 export interface ExperienceRange { min: number; max: number | null }
 
-export function parseExperience(text: string): ExperienceRange | null {
-  if (/\b(freshers?( can| are)? (apply|welcome)|no (prior )?experience (required|needed)|0\s*(?:-|–|to)\s*1\s*(years?|yrs?))\b/i.test(text)) {
+// Whitespace between the parts of a phrase is capped at a few characters. An unbounded `\s*` makes a
+// pattern re-read a long run of spaces or newlines from every starting point, which is how one junk
+// post could tie the server up for seconds.
+export function parseExperience(input: string): ExperienceRange | null {
+  const text = input.length > MAX_PARSE_CHARS ? input.slice(0, MAX_PARSE_CHARS) : input;
+  if (/\b(freshers?( can| are)? (apply|welcome)|no (prior )?experience (required|needed)|0\s{0,3}(?:-|–|to)\s{0,3}1\s{0,3}(years?|yrs?))\b/i.test(text)) {
     return { min: 0, max: 1 };
   }
-  const range = text.match(/(\d{1,2})(?:\.\d)?\s*(?:-|–|to)\s*(\d{1,2})(?:\.\d)?\s*\+?\s*(?:years?|yrs?)/i);
+  const range = text.match(/(?<![\d.])(\d{1,2})(?:\.\d)?\s{0,3}(?:-|–|to)\s{0,3}(\d{1,2})(?:\.\d)?\s{0,3}\+?\s{0,3}(?:years?|yrs?)/i);
   if (range) {
     const min = Number(range[1]);
     const max = Number(range[2]);
     if (max >= min && max <= 40) return { min, max };
   }
-  const atLeast = text.match(/(?:minimum|min\.?|at least)?\s*(\d{1,2})\s*\+?\s*(?:years?|yrs?)(?:'|’)?(?:\s+of)?\s+(?:relevant\s+|professional\s+|hands-on\s+|industry\s+|work\s+)?(?:experience|exp)/i);
+  const atLeast = text.match(/(?<![\d.])(\d{1,2})\s{0,3}\+?\s{0,3}(?:years?|yrs?)(?:'|’)?(?:\s{1,3}of)?\s{1,3}(?:relevant\s{1,3}|professional\s{1,3}|hands-on\s{1,3}|industry\s{1,3}|work\s{1,3})?(?:experience|exp)/i);
   if (atLeast) return { min: Number(atLeast[1]), max: null };
   return null;
 }
 
 /** Longest notice period the employer will accept, in days. 0 = immediate joiners only. */
-export function parseNoticeLimit(text: string): number | null {
+export function parseNoticeLimit(input: string): number | null {
+  const text = input.length > MAX_PARSE_CHARS ? input.slice(0, MAX_PARSE_CHARS) : input;
   if (/\bimmediate joiners? (only|required|preferred)\b|\bjoin immediately\b/i.test(text)) return 0;
-  const m = text.match(/notice period[^.\n]{0,40}?(?:of\s+)?(?:max(?:imum)?\s+|up to\s+|upto\s+|less than\s+|within\s+|<\s*)?(\d{1,3})\s*days/i)
-    ?? text.match(/(\d{1,3})\s*days?(?:'|’)? notice/i)
-    ?? text.match(/(?:serving|can join within|joining within)\s+(\d{1,3})\s*days/i);
+  const m = text.match(/notice period[^.\n]{0,40}?(?:of\s+)?(?:max(?:imum)?\s+|up to\s+|upto\s+|less than\s+|within\s+|<\s*)?(\d{1,3})\s{0,3}days/i)
+    ?? text.match(/(\d{1,3})\s{0,3}days?(?:'|’)?\s{1,3}notice/i)
+    ?? text.match(/(?:serving|can join within|joining within)\s{1,3}(\d{1,3})\s{0,3}days/i);
   return m ? Number(m[1]) : null;
 }
 
@@ -42,7 +49,8 @@ const QUAL_HEADINGS = /\b(qualifications?|requirements?|what you('|’)ll need|w
 const QUAL_SIGNALS = /\b(b\.?\s?tech|b\.?\s?e\.?|m\.?\s?tech|mca|bca|b\.?\s?sc|m\.?\s?sc|mba|bachelor('|’)?s|master('|’)?s|degree|graduate|diploma|\d+\+?\s*(years?|yrs?)|proficien(t|cy) in|experience (with|in)|knowledge of|familiar(ity)? with)\b/i;
 
 /** Does the ad actually say what it takes to get the job? */
-export function statesQualifications(text: string): { ok: boolean; detail: string } {
+export function statesQualifications(input: string): { ok: boolean; detail: string } {
+  const text = input.length > MAX_PARSE_CHARS ? input.slice(0, MAX_PARSE_CHARS) : input;
   const heading = text.match(QUAL_HEADINGS);
   const signals = text.match(new RegExp(QUAL_SIGNALS.source, "gi")) ?? [];
   if (heading && signals.length >= 1) return { ok: true, detail: `Has a "${heading[0]}" section` };
