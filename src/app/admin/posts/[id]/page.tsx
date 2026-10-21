@@ -46,7 +46,7 @@ export default async function PostPage({ params, searchParams }: PageProps<"/adm
       <Link href="/admin" className="muted underline">← Openings</Link>
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">{post.title}</h1>
+          <h1>{post.title}</h1>
           <p className="muted">
             {post.location ?? "Location not listed"} ·{" "}
             <span className={post.status === "open" ? "text-good" : ""}>

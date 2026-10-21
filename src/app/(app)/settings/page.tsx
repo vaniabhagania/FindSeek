@@ -11,7 +11,7 @@ export default async function SettingsPage({ searchParams }: PageProps<"/setting
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Privacy and your data</h1>
+      <h1>Privacy and your data</h1>
       <Notice error={error} />
       <section className="card">
         <h2 className="font-semibold">What the AI did with your data</h2>

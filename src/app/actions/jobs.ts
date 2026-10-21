@@ -1,12 +1,20 @@
 "use server";
 
+import { createHash } from "node:crypto";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { MODEL } from "@/lib/ai/client";
+import { extractListing } from "@/lib/ai/extract-listing";
 import { scoreMatch } from "@/lib/ai/score-match";
 import { tailorCv } from "@/lib/ai/tailor-cv";
-import { keywordScore, loadVerifiedProfile, logAiAction } from "@/lib/data/profile";
-import { getUser } from "@/lib/supabase/server";
+import { keywordScore, loadVerifiedProfile, logAiAction, preferencesOf } from "@/lib/data/profile";
+import { enrichJob } from "@/lib/jobs/enrich";
+import { JOB_FEED_COLUMNS } from "@/lib/jobs/feed";
+import { fitChecks, fitSummary } from "@/lib/jobs/fit";
+import { checkStillOpen } from "@/lib/jobs/liveness";
+import { looksRemote } from "@/lib/jobs/text";
+import type { NormalizedJob } from "@/lib/jobs/types";
+import { createServiceClient, getUser } from "@/lib/supabase/server";
 
 const MATCHES_PER_RUN = 8;
 
@@ -18,20 +26,36 @@ async function requireReadyUser() {
   return { supabase, user, profile };
 }
 
-/** Scores the most promising unscored jobs against the user's verified profile. */
+/**
+ * Scores the most promising verified, open jobs against the user's verified profile.
+ * Jobs that break one of the user's own hard rules (city, job type, pay, notice period,
+ * deal-breakers) are skipped before any AI call, so the AI's attention goes where it's useful.
+ */
 export async function findMatches() {
-  const { supabase, user } = await requireReadyUser();
+  const { supabase, user, profile } = await requireReadyUser();
   const verified = await loadVerifiedProfile(supabase, user.id);
   if (!verified.experiences.length) redirect("/profile?error=noverified");
+  const prefs = preferencesOf(profile);
 
   const [{ data: jobs }, { data: scored }] = await Promise.all([
-    supabase.from("jobs").select("id, company, title, location, description").order("posted_at", { ascending: false }).limit(500),
-    supabase.from("job_matches").select("job_id").eq("user_id", user.id),
+    supabase
+      .from("jobs")
+      .select(JOB_FEED_COLUMNS)
+      .eq("verification_status", "verified")
+      .is("closed_at", null)
+      .order("posted_at", { ascending: false })
+      .limit(800),
+    supabase.from("job_matches").select("job_id, jobs(dedupe_key)").eq("user_id", user.id),
   ]);
-  const seen = new Set((scored ?? []).map((m) => m.job_id));
+  const seenIds = new Set((scored ?? []).map((m) => m.job_id));
+  // The same vacancy reposted or listed on two sites is only scored once.
+  const seenKeys = new Set(
+    (scored ?? []).map((m) => (Array.isArray(m.jobs) ? m.jobs[0] : m.jobs)?.dedupe_key).filter(Boolean),
+  );
 
   const candidates = (jobs ?? [])
-    .filter((j) => !seen.has(j.id))
+    .filter((j) => !seenIds.has(j.id) && !(j.dedupe_key && seenKeys.has(j.dedupe_key)))
+    .filter((j) => fitSummary(fitChecks(j, prefs)).blockers === 0)
     .map((j) => ({ job: j, kw: keywordScore(verified, j) }))
     .filter((c) => c.kw > 0)
     .sort((a, b) => b.kw - a.kw)
@@ -69,6 +93,15 @@ export async function tailorForJob(jobId: string) {
 
   const { data: job } = await supabase.from("jobs").select("*").eq("id", jobId).single();
   if (!job) redirect("/jobs");
+  if (job.verification_status !== "verified") redirect(`/jobs/${jobId}?error=held`);
+  if (job.closed_at) redirect(`/jobs/${jobId}?error=closed`);
+
+  // Confirm the job is still up before spending the user's time and an AI call on it.
+  if ((await checkStillOpen(job)) === "closed") {
+    await createServiceClient()?.from("jobs").update({ closed_at: new Date().toISOString() }).eq("id", jobId);
+    revalidatePath("/jobs");
+    redirect(`/jobs/${jobId}?error=closed`);
+  }
 
   const { data: application } = await supabase
     .from("applications")
@@ -97,6 +130,91 @@ export async function tailorForJob(jobId: string) {
   });
   revalidatePath(`/jobs/${jobId}`);
   redirect(`/jobs/${jobId}`);
+}
+
+const PLATFORMS = ["linkedin", "instagram", "facebook", "whatsapp", "telegram", "naukri", "x", "other"];
+
+/** Turns a bare email into a mailto: link; leaves URLs alone. */
+function applyTarget(link: string | null): string {
+  if (!link) return "";
+  const trimmed = link.trim();
+  if (/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(trimmed)) return `mailto:${trimmed}`;
+  return trimmed;
+}
+
+/**
+ * "Bring a job from anywhere." The user pastes a post they found on LinkedIn, Instagram, Facebook,
+ * a WhatsApp group, etc. The AI locates the fields, anything not literally in the post is thrown
+ * away, and the listing goes through the same verification gate as every other source. It stays
+ * private to the user; held listings show exactly what's missing.
+ */
+export async function submitListing(formData: FormData) {
+  const { user } = await requireReadyUser();
+  const fail = (code: string) => redirect(`/jobs/add?error=${code}`);
+
+  const post = String(formData.get("post") ?? "").trim();
+  if (post.length < 120) fail("post");
+  const seenOn = String(formData.get("seen_on") ?? "other");
+  const sourceUrl = String(formData.get("source_url") ?? "").trim();
+  const typedLink = String(formData.get("apply_link") ?? "").trim();
+
+  const admin = createServiceClient();
+  if (!admin) fail("setup");
+
+  const extracted = await extractListing(post);
+  if (!extracted.is_job_post) fail("notjob");
+
+  const job: NormalizedJob = {
+    source: "user_submitted",
+    external_id: `${user.id}:${createHash("sha256").update(post).digest("hex").slice(0, 24)}`,
+    company: extracted.company ?? "",
+    title: extracted.title ?? "Untitled role",
+    location: extracted.location,
+    country_code: null,
+    remote: looksRemote(extracted.location, extracted.title),
+    description: post,
+    // A link the user typed counts only as much as one in the post: it still has to pass the source check.
+    apply_url: applyTarget(typedLink || extracted.apply_link),
+    salary_min: null,
+    salary_max: null,
+    salary_currency: null,
+    posted_at: new Date().toISOString(),
+  };
+
+  const { data: saved, error } = await admin!
+    .from("jobs")
+    .upsert({
+      ...enrichJob(job),
+      submitted_by: user.id,
+      seen_on: PLATFORMS.includes(seenOn) ? seenOn : "other",
+      source_url: /^https:\/\//i.test(sourceUrl) ? sourceUrl.slice(0, 2000) : null,
+      last_seen_at: new Date().toISOString(),
+    }, { onConflict: "source,external_id" })
+    .select("id")
+    .single();
+  if (error || !saved) fail("save");
+
+  await logAiAction(admin!, {
+    user_id: user.id, action: "extract_listing", model: MODEL, input_ref: saved!.id,
+    output_summary: `${extracted.company ?? "no company"} / ${extracted.title ?? "no title"} from ${seenOn}`,
+  });
+  revalidatePath("/jobs");
+  redirect(`/jobs/${saved!.id}?added=1`);
+}
+
+const REPORT_REASONS = ["closed", "fake", "wrong_pay", "not_india"];
+
+/** Users flag listings; three independent reports pull one from everyone's feed (see migration 0003). */
+export async function reportJob(jobId: string, formData: FormData) {
+  const { supabase, user } = await requireReadyUser();
+  const reason = String(formData.get("reason") ?? "");
+  if (!REPORT_REASONS.includes(reason)) redirect(`/jobs/${jobId}`);
+  await supabase.from("job_reports").upsert(
+    { job_id: jobId, user_id: user.id, reason, note: String(formData.get("note") ?? "").slice(0, 500) || null },
+    { onConflict: "job_id,user_id,reason", ignoreDuplicates: true },
+  );
+  revalidatePath(`/jobs/${jobId}`);
+  redirect(`/jobs/${jobId}?reported=1`);
 }
 
 export async function approveDocument(jobId: string, documentId: string, formData: FormData) {

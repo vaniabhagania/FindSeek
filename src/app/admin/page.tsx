@@ -12,7 +12,7 @@ export default async function AdminHome({ searchParams }: PageProps<"/admin">) {
     return (
       <div className="mx-auto max-w-lg space-y-6">
         <div>
-          <h1 className="text-2xl font-semibold">Hire with FindSeek</h1>
+          <h1>Hire with FindSeek</h1>
           <p className="mt-2 muted">
             Post an opening, tell FindSeek what you need, and get a short, explainable brief on each applicant.
             You make every hiring decision.
@@ -49,7 +49,7 @@ export default async function AdminHome({ searchParams }: PageProps<"/admin">) {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-semibold">Your openings</h1>
+        <h1>Your openings</h1>
         <Link href="/admin/posts/new" className="btn">New opening</Link>
       </div>
       <Notice error={error} />

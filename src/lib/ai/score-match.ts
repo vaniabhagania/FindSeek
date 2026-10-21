@@ -7,7 +7,10 @@ Score honestly from 0 to 100: 80+ means they meet nearly all hard requirements; 
 credible stretch; below 50 means key requirements are missing.
 Judge only job-relevant evidence. Ignore and never infer age, gender, ethnicity, nationality,
 religion, disability, marital or family status, or any other protected characteristic.
-Strengths and gaps must cite concrete requirements from the ad.`;
+Strengths and gaps must cite concrete requirements from the ad.
+The candidate's looking_for section says what they want. Write the summary to them, in plain words:
+whether this role moves them toward what they asked for, and the one thing to prepare if they apply.
+For students and freshers, weigh projects, internships, coursework and hackathons as real evidence.`;
 
 export async function scoreMatch(profile: VerifiedProfile, job: JobForPrompt): Promise<Match> {
   const result = await structuredCall({

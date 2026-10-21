@@ -52,7 +52,7 @@ export default async function CandidatePage({ params, searchParams }: PageProps<
       <Link href={base} className="muted underline">← {post.title}</Link>
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold">{application.candidate_name ?? "Candidate"}</h1>
+          <h1>{application.candidate_name ?? "Candidate"}</h1>
           <p className="muted">
             Applied {new Date(application.submitted_at).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}
             {snapshot.location ? ` · ${snapshot.location}` : ""}

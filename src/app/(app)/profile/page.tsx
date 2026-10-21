@@ -1,13 +1,15 @@
+import Link from "next/link";
 import {
-  addSkill, deleteExperience, deleteSkill, savePreferences, setExperienceConfirmed,
+  addSkill, deleteExperience, deleteSkill, setExperienceConfirmed,
   setSkillConfirmed, updateExperience, uploadCv,
 } from "@/app/actions/profile";
-import { Notice } from "@/components/notice";
+import { Notice, Success } from "@/components/notice";
+import { PreferencesForm } from "@/components/preferences-form";
 import { toMonth } from "@/lib/data/profile";
 import { getUser } from "@/lib/supabase/server";
 
 export default async function ProfilePage({ searchParams }: PageProps<"/profile">) {
-  const { error, parsed } = await searchParams;
+  const { error, parsed, saved } = await searchParams;
   const { supabase, user } = await getUser();
   if (!supabase || !user) return <p className="muted">Connect Supabase to use FindSeek.</p>;
 
@@ -20,58 +22,21 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
 
   return (
     <div className="space-y-8">
-      <h1 className="text-2xl font-semibold">Your profile</h1>
+      <header className="flex flex-wrap items-end justify-between gap-3">
+        <h1>Your profile</h1>
+        <Link href="/onboarding" className="btn-quiet">Describe it in your own words</Link>
+      </header>
       <Notice error={error} />
-      {parsed && (
-        <div className="rounded-lg border border-good/40 bg-good/5 px-4 py-3 text-sm">
-          CV read. Review each item below and confirm it. Only confirmed facts are used for matching and tailoring.
-        </div>
-      )}
+      {saved && <Success>Saved. Your feed now follows these preferences.</Success>}
+      {parsed && <Success>CV read. Review each item below and confirm it. Only confirmed facts are used for matching and tailoring.</Success>}
 
-      <section className="card">
-        <h2 className="font-semibold">What you’re looking for</h2>
-        <form action={savePreferences} className="mt-4 grid gap-4 sm:grid-cols-2">
-          <Field name="full_name" label="Full name" value={profile?.full_name} />
-          <Field name="headline" label="Headline" value={profile?.headline} placeholder="e.g. Backend engineer, 6 years in fintech" />
-          <Field name="target_roles" label="Target roles (comma separated)" value={profile?.target_roles?.join(", ")} placeholder="Product designer, UX designer" />
-          <Field name="domains" label="Domains / industries" value={profile?.domains?.join(", ")} placeholder="Fintech, healthcare" />
-          <Field name="interests" label="Interests" value={profile?.interests?.join(", ")} />
-          <Field name="location" label="Where you live" value={profile?.location} />
-          <div>
-            <label className="label" htmlFor="country_code">Job market</label>
-            <select id="country_code" name="country_code" defaultValue={profile?.country_code ?? "us"} className="input">
-              <option value="us">United States</option>
-              <option value="gb">United Kingdom</option>
-              <option value="ca">Canada</option>
-              <option value="au">Australia</option>
-            </select>
-          </div>
-          <div>
-            <label className="label" htmlFor="remote_preference">Work style</label>
-            <select id="remote_preference" name="remote_preference" defaultValue={profile?.remote_preference ?? "any"} className="input">
-              <option value="any">Any</option>
-              <option value="remote">Remote</option>
-              <option value="hybrid">Hybrid</option>
-              <option value="onsite">On-site</option>
-            </select>
-          </div>
-          <Field name="min_match_score" label="Only show jobs scoring at least (%)" value={String(profile?.min_match_score ?? 60)} type="number" />
-          <Field name="monthly_application_cap" label="Max applications per month" value={String(profile?.monthly_application_cap ?? 40)} type="number" />
-          <div className="space-y-2 sm:col-span-2">
-            <Check name="consent_ai" checked={Boolean(profile?.consent_ai_processing_at)}>
-              I agree that FindSeek may send my CV and profile to its AI provider (Anthropic) to extract facts, score
-              jobs and draft tailored CVs. I can withdraw this and delete my data at any time.
-            </Check>
-            <Check name="consent_analytics" checked={Boolean(profile?.consent_outcome_analytics_at)}>
-              Optional: use the outcomes of my applications (anonymised) to improve tailoring for everyone.
-            </Check>
-          </div>
-          <div className="sm:col-span-2"><button className="btn">Save</button></div>
-        </form>
+      <section className="panel p-5 sm:p-6">
+        <h2 className="mb-5">What you&apos;re looking for</h2>
+        <PreferencesForm profile={profile} next="/profile" extended />
       </section>
 
       <section className="card">
-        <h2 className="font-semibold">Upload your CV</h2>
+        <h2>Upload your CV</h2>
         <p className="mt-1 muted">PDF or plain text, up to 4 MB. We extract the facts; you confirm them.</p>
         <form action={uploadCv} className="mt-4 flex flex-wrap items-center gap-3">
           <input type="file" name="cv" accept=".pdf,.txt,application/pdf,text/plain" required className="text-sm" />
@@ -81,7 +46,7 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
 
       <section className="space-y-3">
         <div className="flex items-baseline justify-between">
-          <h2 className="font-semibold">Experience</h2>
+          <h2>Experience</h2>
           {unconfirmed > 0 && <span className="text-sm text-warn">{unconfirmed} to review</span>}
         </div>
         {(experiences ?? []).length === 0 && <p className="muted">Nothing yet. Upload your CV above.</p>}
@@ -89,14 +54,14 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
           <div key={e.id} className={`card ${e.confirmed ? "" : "border-warn"}`}>
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <div className="font-medium">{e.title} · {e.organisation}</div>
-                <div className="muted">{e.kind} · {toMonth(e.start_date) ?? "?"} – {toMonth(e.end_date) ?? "present"}</div>
+                <div className="font-medium">{e.title}, {e.organisation}</div>
+                <div className="muted capitalize">{e.kind}, {toMonth(e.start_date) ?? "?"} to {toMonth(e.end_date) ?? "present"}</div>
               </div>
               <div className="flex gap-2">
                 <form action={setExperienceConfirmed.bind(null, e.id, !e.confirmed)}>
                   <button className={e.confirmed ? "btn-ghost" : "btn"}>{e.confirmed ? "Unconfirm" : "Confirm"}</button>
                 </form>
-                <form action={deleteExperience.bind(null, e.id)}><button className="btn-ghost">Delete</button></form>
+                <form action={deleteExperience.bind(null, e.id)}><button className="btn-quiet">Delete</button></form>
               </div>
             </div>
             <ul className="mt-3 list-disc space-y-1 pl-5 text-sm">
@@ -121,7 +86,7 @@ export default async function ProfilePage({ searchParams }: PageProps<"/profile"
       </section>
 
       <section className="card">
-        <h2 className="font-semibold">Skills</h2>
+        <h2>Skills</h2>
         <div className="mt-3 flex flex-wrap gap-2">
           {(skills ?? []).map((s) => (
             <span key={s.id} className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm ${s.confirmed ? "border-border" : "border-warn"}`}>
@@ -148,14 +113,5 @@ function Field(props: { name: string; label: string; value?: string | null; plac
       <label className="label" htmlFor={props.name}>{props.label}</label>
       <input id={props.name} name={props.name} type={props.type ?? "text"} defaultValue={props.value ?? ""} placeholder={props.placeholder} className="input" />
     </div>
-  );
-}
-
-function Check({ name, checked, children }: { name: string; checked: boolean; children: React.ReactNode }) {
-  return (
-    <label className="flex items-start gap-2 text-sm">
-      <input type="checkbox" name={name} defaultChecked={checked} className="mt-1" />
-      <span>{children}</span>
-    </label>
   );
 }

@@ -8,7 +8,7 @@ export const env = {
   anthropicApiKey: process.env.ANTHROPIC_API_KEY ?? "",
   adzunaAppId: process.env.ADZUNA_APP_ID ?? "",
   adzunaAppKey: process.env.ADZUNA_APP_KEY ?? "",
-  jobCountries: (process.env.JOB_COUNTRIES ?? "us,gb,ca,au")
+  jobCountries: (process.env.JOB_COUNTRIES ?? "in")
     .split(",")
     .map((c) => c.trim().toLowerCase())
     .filter(Boolean),

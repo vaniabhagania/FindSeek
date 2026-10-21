@@ -19,6 +19,11 @@ export interface VerifiedProfile {
   domains: string[];
   experiences: VerifiedExperience[];
   skills: string[];
+  /** What the user is looking for. Pay expectations stay out of prompts; they're checked in code. */
+  career_stage?: "student" | "fresher" | "experienced" | null;
+  job_types?: string[];
+  preferred_cities?: string[];
+  remote_preference?: string | null;
 }
 
 export function profileToPrompt(p: VerifiedProfile): string {
@@ -31,6 +36,12 @@ export function profileToPrompt(p: VerifiedProfile): string {
       domains: p.domains,
       experiences: p.experiences,
       skills: p.skills,
+      looking_for: {
+        career_stage: p.career_stage ?? null,
+        job_types: p.job_types ?? [],
+        preferred_cities: p.preferred_cities ?? [],
+        work_mode: p.remote_preference ?? "any",
+      },
     },
     null,
     2,

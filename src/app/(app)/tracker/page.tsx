@@ -23,7 +23,7 @@ export default async function TrackerPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold">Applications</h1>
+      <h1>Applications</h1>
       <div className="grid gap-4 md:grid-cols-5">
         {COLUMNS.map((col) => {
           const items = (apps ?? []).filter((a) =>

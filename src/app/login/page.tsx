@@ -8,21 +8,21 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   return (
     <>
       <SetupNotice />
-      <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-4 py-16">
-        <Link href="/" className="mb-8 text-lg font-semibold">FindSeek</Link>
-        <h1 className="text-2xl font-semibold">Sign in</h1>
-        <p className="mt-1 mb-6 muted">We’ll email you a one-time sign-in link.</p>
-        <Notice error={error} />
+      <main className="mx-auto flex w-full max-w-sm flex-1 flex-col justify-center px-5 py-16">
+        <Link href="/" className="display mb-10 text-[24px] font-semibold" style={{ fontStretch: "80%" }}>FindSeek</Link>
+        <h1>Sign in or create an account</h1>
+        <p className="mt-2 mb-6 text-[15px] text-muted">We&apos;ll email you a one-time link. No password to remember.</p>
+        <div className="mb-4"><Notice error={error} /></div>
         {sent ? (
-          <div className="card">Check your inbox for the sign-in link.</div>
+          <div className="panel p-5 text-[15px]">Check your inbox for the sign-in link. It works once.</div>
         ) : (
           <form action={signInWithEmail} className="space-y-4">
             <input type="hidden" name="next" value={typeof next === "string" ? next : "/dashboard"} />
             <div>
               <label className="label" htmlFor="email">Email</label>
-              <input id="email" name="email" type="email" required autoComplete="email" className="input" />
+              <input id="email" name="email" type="email" required autoComplete="email" inputMode="email" className="input h-11" placeholder="you@example.com" />
             </div>
-            <button className="btn w-full">Email me a link</button>
+            <button className="btn h-11 w-full">Email me a sign-in link</button>
           </form>
         )}
       </main>

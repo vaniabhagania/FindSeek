@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { VerifiedProfile } from "@/lib/ai/profile-context";
+import type { Preferences } from "@/lib/jobs/fit";
 
 /** DB dates are YYYY-MM-DD; CVs and prompts use YYYY-MM. */
 export const toMonth = (d: string | null) => (d ? d.slice(0, 7) : null);
@@ -29,6 +30,10 @@ export async function loadVerifiedProfile(supabase: SupabaseClient, userId: stri
       bullets: e.bullets ?? [],
     })),
     skills: (skills ?? []).map((s) => s.name),
+    career_stage: profile?.career_stage ?? null,
+    job_types: profile?.job_types ?? [],
+    preferred_cities: profile?.preferred_cities ?? [],
+    remote_preference: profile?.remote_preference ?? null,
   };
 }
 
@@ -47,4 +52,21 @@ export async function logAiAction(
   entry: { user_id: string; action: string; model: string; input_ref?: string; output_summary?: string },
 ) {
   await supabase.from("ai_audit_log").insert(entry);
+}
+
+/** The profile row's preference columns, shaped for fit checks. */
+export function preferencesOf(profile: Record<string, unknown> | null | undefined): Preferences {
+  const p = (profile ?? {}) as Record<string, never>;
+  const numOrNull = (v: unknown) => (v == null || v === "" ? null : Number(v));
+  return {
+    career_stage: p.career_stage ?? null,
+    experience_years: numOrNull(p.experience_years),
+    preferred_cities: p.preferred_cities ?? [],
+    open_to_relocate: Boolean(p.open_to_relocate),
+    remote_preference: p.remote_preference ?? "any",
+    job_types: p.job_types ?? ["full_time"],
+    expected_pay_min_inr: numOrNull(p.expected_pay_min_inr),
+    notice_period_days: numOrNull(p.notice_period_days),
+    deal_breakers: p.deal_breakers ?? [],
+  };
 }

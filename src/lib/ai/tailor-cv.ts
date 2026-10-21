@@ -22,6 +22,10 @@ Quality bar (what gets candidates past screening and recruiters):
 - Prefer specific, personal detail over generic phrasing; recruiters reject CVs that read as AI-generated.
 - Summary: 2-3 sentences aimed at this role. Cover letter: under 250 words, specific to this company and role,
   plain and confident, no clichés.
+- Indian hiring conventions: keep it to one page for students and freshers and two at most otherwise.
+  If looking_for.career_stage is student or fresher, lead with projects, internships and education.
+  Never add a photo, date of birth, gender, marital status, religion or father's name, even though
+  older Indian CV templates include them; they invite bias and are not evidence of fit.
 - change_log: one line per meaningful change, so the candidate can review what you did.`;
 
 export interface TailorOutput {

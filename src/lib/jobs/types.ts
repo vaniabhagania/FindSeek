@@ -1,4 +1,4 @@
-export type JobSource = "adzuna" | "greenhouse" | "lever" | "manual";
+export type JobSource = "adzuna" | "greenhouse" | "lever" | "manual" | "user_submitted";
 
 /** A job listing normalised across every source. Mirrors the `jobs` table. */
 export interface NormalizedJob {

@@ -1,14 +1,20 @@
 import { env } from "@/lib/env";
 import { searchAdzuna } from "./adzuna";
-import { GREENHOUSE_BOARDS, LEVER_SITES } from "./boards";
+import { greenhouseBoards, leverSites } from "./boards";
+import { collapseDuplicates } from "./dedupe";
+import { enrichJob, type EnrichedJob } from "./enrich";
 import { fetchGreenhouseBoard } from "./greenhouse";
 import { fetchLeverSite } from "./lever";
-import { scamFlags } from "./scam";
-import type { NormalizedJob } from "./types";
+import type { JobSource, NormalizedJob } from "./types";
 
 export interface IngestResult {
-  jobs: (NormalizedJob & { scam_flags: string[] })[];
+  jobs: (EnrichedJob & { dedupe_key: string })[];
   errors: string[];
+  /**
+   * Company boards fetched in full this run. A listing from one of these that wasn't in the
+   * response has been taken down by the employer, so it can be closed with confidence.
+   */
+  completeBoards: { source: JobSource; prefix: string }[];
 }
 
 /**
@@ -16,25 +22,37 @@ export interface IngestResult {
  * (e.g. the distinct target roles across all users) used for Adzuna search.
  */
 export async function collectJobs(queries: string[]): Promise<IngestResult> {
-  const tasks: Promise<NormalizedJob[]>[] = [
-    ...GREENHOUSE_BOARDS.map((b) => fetchGreenhouseBoard(b.token, b.company)),
-    ...LEVER_SITES.map((s) => fetchLeverSite(s.site, s.company)),
-    // Keep Adzuna usage well inside the free-tier monthly quota.
-    ...env.jobCountries.flatMap((country) => queries.slice(0, 5).map((q) => searchAdzuna(country, q))),
+  const boards = [
+    ...greenhouseBoards().map((b) => ({ source: "greenhouse" as const, prefix: `${b.token}:`, run: () => fetchGreenhouseBoard(b.token, b.company) })),
+    ...leverSites().map((s) => ({ source: "lever" as const, prefix: `${s.site}:`, run: () => fetchLeverSite(s.site, s.company) })),
   ];
+  // Keep Adzuna usage well inside the free-tier monthly quota.
+  const searches = env.jobCountries.flatMap((country) => queries.slice(0, 8).map((q) => () => searchAdzuna(country, q)));
 
-  const settled = await Promise.allSettled(tasks);
-  const jobs: IngestResult["jobs"] = [];
+  const [boardResults, searchResults] = await Promise.all([
+    Promise.allSettled(boards.map((b) => b.run())),
+    Promise.allSettled(searches.map((s) => s())),
+  ]);
+
+  const raw: NormalizedJob[] = [];
   const errors: string[] = [];
-  for (const result of settled) {
-    if (result.status === "rejected") {
-      errors.push(String(result.reason instanceof Error ? result.reason.message : result.reason));
-      continue;
+  const completeBoards: IngestResult["completeBoards"] = [];
+  boardResults.forEach((result, i) => {
+    if (result.status === "rejected") errors.push(reason(result.reason));
+    else {
+      completeBoards.push({ source: boards[i].source, prefix: boards[i].prefix });
+      raw.push(...result.value);
     }
-    for (const job of result.value) {
-      if (!job.description || !job.apply_url) continue;
-      jobs.push({ ...job, scam_flags: scamFlags(job) });
-    }
+  });
+  for (const result of searchResults) {
+    if (result.status === "rejected") errors.push(reason(result.reason));
+    else raw.push(...result.value);
   }
-  return { jobs, errors };
+
+  const usable = raw.filter((j) => j.description && j.apply_url);
+  // Score duplicates on the raw listing, then enrich only the copy we keep.
+  const unique = collapseDuplicates(usable);
+  return { jobs: unique.map((j) => ({ ...enrichJob(j), dedupe_key: j.dedupe_key })), errors, completeBoards };
 }
+
+const reason = (r: unknown) => String(r instanceof Error ? r.message : r);

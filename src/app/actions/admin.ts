@@ -12,6 +12,7 @@ import { screenCandidate, type ApplicationSnapshot } from "@/lib/ai/screen-candi
 import { logAiAction } from "@/lib/data/profile";
 import { sendEmail } from "@/lib/email/send";
 import { isAiConfigured, isEmailConfigured } from "@/lib/env";
+import { enrichJob } from "@/lib/jobs/enrich";
 import { createServiceClient } from "@/lib/supabase/server";
 
 // Server Actions are reachable by direct POST, so each one re-checks that the caller acts for an
@@ -89,6 +90,16 @@ export async function createPost(formData: FormData) {
   if (description.length < 40) fail("/admin/posts/new", "Describe the role in at least 40 characters so candidates can judge their fit.");
 
   const work = text(formData.get("work_style"));
+  const unit = text(formData.get("pay_unit")) === "month" ? "month" : "year";
+  const toAnnual = (v: FormDataEntryValue | null) => {
+    const n = Number(text(v));
+    if (!text(v) || !Number.isFinite(n) || n <= 0) return null;
+    return Math.round(unit === "month" ? n * 12 : n * 100000);
+  };
+  const payMin = toAnnual(formData.get("pay_min"));
+  const payMax = toAnnual(formData.get("pay_max")) ?? payMin;
+  if (payMin == null) fail("/admin/posts/new", "State the pay. Every opening on FindSeek shows a salary or stipend.");
+  if (payMax != null && payMin != null && payMax < payMin) fail("/admin/posts/new", "The top of the pay range is below the bottom.");
   const { data: post, error } = await r.supabase
     .from("job_posts")
     .insert({
@@ -96,8 +107,11 @@ export async function createPost(formData: FormData) {
       title,
       description,
       location: text(formData.get("location")) || null,
-      country_code: text(formData.get("country_code")).toLowerCase() || null,
-      remote: work === "remote" ? true : work === "onsite" ? false : null,
+      country_code: "in",
+      remote: work === "remote" ? true : work === "onsite" || work === "hybrid" ? false : null,
+      pay_min_inr: payMin,
+      pay_max_inr: payMax,
+      pay_period: unit,
     })
     .select("id")
     .single();
@@ -120,20 +134,35 @@ export async function publishPost(postId: string) {
   if (!admin) fail(path, "SUPABASE_SERVICE_ROLE_KEY isn't set, so openings can't be published yet.");
 
   const jobId: string = post.job_id ?? randomUUID();
+  const now = new Date().toISOString();
+  // Employer openings go through the same gate as every other listing.
+  const enriched = enrichJob({
+    source: "manual",
+    external_id: post.id,
+    company: r.employer.name,
+    title: post.title,
+    location: post.location,
+    country_code: post.country_code ?? "in",
+    remote: post.remote,
+    description: post.description,
+    apply_url: `/jobs/${jobId}`,
+    salary_min: post.pay_min_inr,
+    salary_max: post.pay_max_inr,
+    salary_currency: post.pay_min_inr != null ? "INR" : null,
+    posted_at: post.published_at ?? now,
+  });
+  if (enriched.verification_status !== "verified") {
+    const missing = enriched.verification_checks.filter((c) => !c.ok).map((c) => `${c.label}: ${c.detail}`);
+    fail(path, `This opening can't be published yet. ${missing.join(". ")}.`);
+  }
   const { error: jobError } = await admin.from("jobs").upsert(
     {
       id: jobId,
-      source: "manual",
-      external_id: post.id,
-      company: r.employer.name,
-      title: post.title,
-      location: post.location,
-      country_code: post.country_code,
-      remote: post.remote,
-      description: post.description,
-      apply_url: `/jobs/${jobId}`,
-      posted_at: post.published_at ?? new Date().toISOString(),
-      scam_flags: [],
+      ...enriched,
+      // Keep the employer's own period so a stipend shows per month.
+      pay_period: post.pay_period ?? enriched.pay_period,
+      last_seen_at: now,
+      closed_at: null,
     },
     { onConflict: "source,external_id" },
   );
@@ -156,6 +185,8 @@ export async function closePost(postId: string) {
   const r = await requireRecruiter();
   const post = await loadOwnPost(r, postId);
   await r.supabase.from("job_posts").update({ status: "closed" }).eq("id", post.id);
+  // Take it out of candidates' feeds too, not just the employer's list.
+  if (post.job_id) await createServiceClient()?.from("jobs").update({ closed_at: new Date().toISOString() }).eq("id", post.job_id);
   revalidatePath(`/admin/posts/${post.id}`);
   revalidatePath("/admin");
 }

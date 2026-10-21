@@ -39,7 +39,7 @@ export async function searchAdzuna(country: string, what: string, page = 1): Pro
     app_key: env.adzunaAppKey,
     what,
     results_per_page: "50",
-    max_days_old: "30",
+    max_days_old: "21",
   });
   const res = await fetch(
     `https://api.adzuna.com/v1/api/jobs/${country}/search/${page}?${params}`,
