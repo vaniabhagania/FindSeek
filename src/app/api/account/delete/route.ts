@@ -1,8 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { isSameOrigin } from "@/lib/security";
 import { createServiceClient, getUser } from "@/lib/supabase/server";
 
 /** Right to erasure: removes stored CV files, then the auth user (rows cascade). */
 export async function POST(request: NextRequest) {
+  // Cookies ride along with a form posted from any site, and typing DELETE is only a field in that form.
+  if (!isSameOrigin(request.headers)) return NextResponse.json({ error: "forbidden" }, { status: 403 });
+
   const { supabase, user } = await getUser();
   if (!supabase || !user) return NextResponse.json({ error: "unauthorized" }, { status: 401 });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { bearerMatches, safeRelativePath } from "./security";
+import { bearerMatches, isSameOrigin, safeRelativePath } from "./security";
 import { contentSecurityPolicy, securityHeaders } from "./security-headers";
 
 describe("safeRelativePath", () => {
@@ -86,5 +86,47 @@ describe("security headers", () => {
     expect(contentSecurityPolicy({ supabaseUrl: "javascript:alert(1)" })).toContain("connect-src 'self';");
     expect(contentSecurityPolicy({ supabaseUrl: "not a url" })).toContain("connect-src 'self';");
     expect(contentSecurityPolicy({})).toContain("connect-src 'self';");
+  });
+});
+
+describe("isSameOrigin", () => {
+  const headers = (h: Record<string, string>) => ({ get: (name: string) => h[name.toLowerCase()] ?? null });
+  const host = { host: "findseek.example" };
+
+  it("accepts a request the browser marks same-origin", () => {
+    expect(isSameOrigin(headers({ ...host, "sec-fetch-site": "same-origin" }))).toBe(true);
+  });
+
+  it.each(["cross-site", "same-site", "none"])("rejects Sec-Fetch-Site: %s", (site) => {
+    expect(isSameOrigin(headers({ ...host, "sec-fetch-site": site, origin: "https://findseek.example" }))).toBe(false);
+  });
+
+  it("falls back to the Origin header when the browser sends no fetch metadata", () => {
+    expect(isSameOrigin(headers({ ...host, origin: "https://findseek.example" }))).toBe(true);
+    expect(isSameOrigin(headers({ ...host, origin: "https://evil.example" }))).toBe(false);
+    expect(isSameOrigin(headers({ ...host, origin: "https://findseek.example.evil.example" }))).toBe(false);
+    expect(isSameOrigin(headers({ ...host, origin: "https://evil.example/findseek.example" }))).toBe(false);
+    expect(isSameOrigin(headers({ ...host, origin: "http://findseek.example:8080" }))).toBe(false);
+  });
+
+  it("rejects an opaque or unreadable Origin", () => {
+    expect(isSameOrigin(headers({ ...host, origin: "null" }))).toBe(false);
+    expect(isSameOrigin(headers({ ...host, origin: "not a url" }))).toBe(false);
+    expect(isSameOrigin(headers({ ...host, origin: "" }))).toBe(false);
+  });
+
+  it("rejects a request that says nothing about where it came from", () => {
+    expect(isSameOrigin(headers({ ...host }))).toBe(false);
+    expect(isSameOrigin(headers({}))).toBe(false);
+  });
+
+  it("uses the forwarded host when behind a proxy", () => {
+    expect(isSameOrigin(headers({ host: "internal:3000", "x-forwarded-host": "findseek.example", origin: "https://findseek.example" }))).toBe(true);
+    expect(isSameOrigin(headers({ host: "internal:3000", "x-forwarded-host": "findseek.example, other.example", origin: "https://findseek.example" }))).toBe(true);
+    expect(isSameOrigin(headers({ host: "internal:3000", origin: "https://findseek.example" }))).toBe(false);
+  });
+
+  it("does not let a same-origin claim override a missing host", () => {
+    expect(isSameOrigin(headers({ "sec-fetch-site": "same-origin" }))).toBe(true); // the browser vouches for it
   });
 });

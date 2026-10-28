@@ -28,3 +28,24 @@ export function bearerMatches(header: string | null | undefined, secret: string)
   const actual = createHash("sha256").update(header).digest();
   return timingSafeEqual(expected, actual);
 }
+
+/**
+ * Did this request come from a page on our own site? For routes that change something when a signed-in
+ * user's cookies arrive with it, so another site cannot make the browser send the request for them.
+ * Modern browsers say so themselves (Sec-Fetch-Site); older ones send an Origin header to compare with
+ * the host. A request that says neither is refused.
+ */
+export function isSameOrigin(headers: { get(name: string): string | null }): boolean {
+  const site = headers.get("sec-fetch-site");
+  if (site) return site === "same-origin";
+
+  const origin = headers.get("origin");
+  const host = (headers.get("x-forwarded-host") ?? headers.get("host") ?? "").split(",")[0].trim();
+  if (!origin || !host) return false;
+  try {
+    const url = new URL(origin);
+    return url.host === host && (url.protocol === "https:" || url.hostname === "localhost");
+  } catch {
+    return false;
+  }
+}
