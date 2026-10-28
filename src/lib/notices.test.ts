@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { failedCheckLabels, noticeMessage, noticeUrl, NOTICES } from "./notices";
+import { failedCheckHints, failedCheckLabels, noticeMessage, noticeUrl, NOTICES } from "./notices";
 
 describe("alert box messages", () => {
   it("shows nothing for text that came from a link", () => {
@@ -33,6 +33,13 @@ describe("alert box messages", () => {
     expect(failedCheckLabels("source,pay")).toEqual(["A real hiring source", "Pay stated"]);
     expect(failedCheckLabels("pay,constructor,<b>x</b>,__proto__")).toEqual(["Pay stated"]);
     expect(failedCheckLabels(undefined)).toEqual([]);
+  });
+
+  it("explains how to fix a failed source check, from fixed text only", () => {
+    expect(failedCheckHints("source")[0]).toMatch(/company's own domain/);
+    expect(failedCheckHints("pay,india")).toEqual([]);
+    expect(failedCheckHints("constructor,__proto__,<b>x</b>")).toEqual([]);
+    expect(failedCheckHints(undefined)).toEqual([]);
   });
 
   it("builds links that carry a code, never prose", () => {

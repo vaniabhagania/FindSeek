@@ -15,6 +15,9 @@ export const env = {
   cronSecret: process.env.CRON_SECRET ?? "",
   // Who may review user reports of bad listings (/ops/reports). Comma-separated email addresses.
   operatorEmails: process.env.OPERATOR_EMAILS ?? "",
+  // Company email domains an operator has vetted for employers whose domain differs from their name
+  // (acmetech.in for "Acme Technologies"). Comma-separated.
+  trustedEmployerDomains: process.env.TRUSTED_EMPLOYER_DOMAINS ?? "",
   resendApiKey: process.env.RESEND_API_KEY ?? "",
   emailFrom: process.env.EMAIL_FROM ?? "",
 };

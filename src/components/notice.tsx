@@ -1,4 +1,4 @@
-import { failedCheckLabels, noticeMessage } from "@/lib/notices";
+import { failedCheckHints, failedCheckLabels, noticeMessage } from "@/lib/notices";
 import { Caution, Check } from "./icons";
 
 /**
@@ -10,13 +10,16 @@ export function Notice({ error, checks }: { error?: string | string[]; checks?: 
   const code = Array.isArray(error) ? error[0] : error;
   const message = noticeMessage(code);
   if (!message) return null;
-  const failed = (code === "unpublishable" || code === "edit_unpublishable") ? failedCheckLabels(checks) : [];
+  const checkable = code === "unpublishable" || code === "edit_unpublishable";
+  const failed = checkable ? failedCheckLabels(checks) : [];
+  const hints = checkable ? failedCheckHints(checks) : [];
   return (
     <div role="alert" className="flex items-start gap-2.5 rounded-lg border border-blocker/30 bg-blocker/5 px-4 py-3 text-[15px] text-blocker">
       <Caution className="mt-1 shrink-0" />
       <span>
         {message}
         {failed.length > 0 && <> Still missing: {failed.join(", ")}.</>}
+        {hints.map((h) => <span key={h} className="mt-1 block">{h}</span>)}
       </span>
     </div>
   );

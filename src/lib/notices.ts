@@ -123,6 +123,17 @@ export function failedCheckLabels(keys: unknown): string[] {
   return list.filter((k): k is CheckKey => Object.hasOwn(CHECK_LABELS, k)).map((k) => CHECK_LABELS[k]);
 }
 
+const CHECK_HINTS: Partial<Record<CheckKey, string>> = {
+  source:
+    "An opening is trusted as your company's only when your account signs in with an email on your company's own domain, not Gmail, Yahoo or similar. If your domain differs from your company name, ask a FindSeek operator to vouch for it.",
+};
+
+/** What to do about a failed check, from the same fixed list: never text taken from the link. */
+export function failedCheckHints(keys: unknown): string[] {
+  const list = (Array.isArray(keys) ? keys.join(",") : typeof keys === "string" ? keys : "").split(",");
+  return list.flatMap((k) => (Object.hasOwn(CHECK_HINTS, k) ? [CHECK_HINTS[k as CheckKey] as string] : []));
+}
+
 /** `/path?error=code`, optionally with extra fixed parameters. */
 export function noticeUrl(path: string, code: NoticeCode, extra: Record<string, string> = {}): string {
   const q = new URLSearchParams({ error: code, ...extra });

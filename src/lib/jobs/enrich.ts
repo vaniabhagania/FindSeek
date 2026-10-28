@@ -6,10 +6,11 @@ import { parseExperience, parseJobType, parseNoticeLimit } from "@/lib/india/req
 import { dedupeKey } from "./dedupe";
 import { scamFlags } from "./scam";
 import type { NormalizedJob } from "./types";
-import { verifyListing } from "./verify";
+import { verifyListing, type VerifyContext } from "./verify";
 
-export function enrichJob(job: NormalizedJob) {
-  const v = verifyListing(job);
+/** `context` is used to judge the listing and is never copied into the returned row. */
+export function enrichJob(job: NormalizedJob, context: VerifyContext = {}) {
+  const v = verifyListing(job, context);
   const text = `${job.title}\n${job.description}`;
   const exp = parseExperience(text);
   const elig = indiaEligibility(job);

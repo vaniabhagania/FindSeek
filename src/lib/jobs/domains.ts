@@ -113,3 +113,21 @@ export function belongsToCompany(company: string, tokens: string[], host: string
   }
   return OWN_SITE_SUFFIXES.has(reg.suffix) && companyLabels(company, tokens).has(reg.label);
 }
+
+// ---------------------------------------------------------------------------
+// Shared by the hiring-source check and the employer-account check
+// ---------------------------------------------------------------------------
+
+const PERSONAL_EMAIL = /@(?:gmail|googlemail|yahoo|ymail|rocketmail|hotmail|outlook|live|msn|rediffmail|rediff|protonmail|proton|pm|icloud|aol|gmx|zohomail|yandex|mail)\.(?:com|in|co\.in|me|net|ru)\b/i;
+
+/** A free mailbox anyone can open under any name (gmail, yahoo, outlook…), so it says nothing about an employer. */
+export function isPersonalEmail(email: string): boolean {
+  return PERSONAL_EMAIL.test(email);
+}
+
+const COMPANY_NOISE = /\b(private|pvt|limited|ltd|llp|inc|technologies|technology|tech|solutions|services|software|labs|india|global|the|and|co)\b\.?/gi;
+
+/** "Razorpay Software Pvt. Ltd." -> ["razorpay"]; used to match a company to its own domain. */
+export function companyTokens(company: string): string[] {
+  return company.toLowerCase().replace(COMPANY_NOISE, " ").replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((t) => t.length >= 3);
+}

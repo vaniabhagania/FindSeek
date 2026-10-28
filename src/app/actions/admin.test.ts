@@ -35,13 +35,14 @@ const redirect = vi.fn((url: string) => {
   throw new Error(`REDIRECT:${url}`);
 });
 let service: ReturnType<typeof fakeClient> | null = null;
+let recruiterEmail = "r@acme.in";
 
 vi.mock("next/navigation", () => ({ redirect: (url: string) => redirect(url), notFound: () => { throw new Error("NOT_FOUND"); } }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/admin/session", () => ({
   getRecruiter: async () => ({
     supabase: fakeClient("user"),
-    user: { id: "u1", email: "r@acme.in" },
+    user: { id: "u1", email: recruiterEmail },
     employer: { id: "emp1", name: "Acme Technologies", role: "owner" },
   }),
 }));
@@ -114,6 +115,7 @@ beforeEach(() => {
   redirect.mockClear();
   storedPost = { ...basePost };
   service = fakeClient("server");
+  recruiterEmail = "r@acme.in"; // a work address on the employer's own domain
 });
 
 describe("updatePost: a draft", () => {
@@ -327,5 +329,52 @@ describe("publishPost", () => {
     expect(out).toContain("error=unpublishable");
     expect(ran("job_posts", "update")).toHaveLength(0);
     expect(ran("jobs", "upsert")).toHaveLength(0);
+  });
+});
+
+
+describe("an opening is trusted as the company's own only when the account is tied to it", () => {
+  const publishable = () => {
+    storedPost = { ...basePost, title: "Backend Engineer", description: GOOD_DESCRIPTION, location: "Pune", remote: false, pay_min_inr: 1_800_000, pay_max_inr: 2_600_000 };
+  };
+
+  it("refuses to publish from a free mailbox, so nobody can post as a well-known company", async () => {
+    publishable();
+    recruiterEmail = "someone@gmail.com";
+    const out = await run(() => publishPost(basePost.id));
+    expect(out).toContain("error=unpublishable");
+    expect(out).toContain("checks=source");
+    expect(ran("job_posts", "update")).toHaveLength(0);
+    expect(ran("jobs", "upsert")).toHaveLength(0);
+  });
+
+  it("refuses an address on some other company's domain", async () => {
+    publishable();
+    recruiterEmail = "hr@infosys.com"; // employer in these tests is Acme Technologies
+    const out = await run(() => publishPost(basePost.id));
+    expect(out).toContain("checks=source");
+    expect(ran("jobs", "upsert")).toHaveLength(0);
+  });
+
+  it("does not let a live opening's edit slip through when the account no longer qualifies", async () => {
+    storedPost = { ...basePost, status: "open", job_id: "33333333-3333-3333-3333-333333333333", published_at: "2026-10-01T00:00:00Z", pay_min_inr: 1_800_000, pay_max_inr: 2_600_000, location: "Pune", description: GOOD_DESCRIPTION };
+    recruiterEmail = "someone@gmail.com";
+    const out = await run(() => updatePost(basePost.id, form(valid)));
+    expect(out).toContain("error=edit_unpublishable");
+    expect(ran("job_posts", "update")).toHaveLength(0);
+  });
+
+  it("publishes from the company's own domain", async () => {
+    publishable();
+    const out = await run(() => publishPost(basePost.id));
+    expect(out).toBe(`REDIRECT:/admin/posts/${basePost.id}`);
+    expect(ranOn("server", "jobs", "upsert")[0].args[0]).toMatchObject({ verification_status: "verified" });
+  });
+
+  it("never stores the account's email in the listing everyone can read", async () => {
+    publishable();
+    recruiterEmail = "private.person@acme.in";
+    await run(() => publishPost(basePost.id));
+    expect(JSON.stringify(ranOn("server", "jobs", "upsert")[0].args[0])).not.toContain("private.person");
   });
 });

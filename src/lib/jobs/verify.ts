@@ -6,7 +6,8 @@
 import { indiaEligibility } from "@/lib/india/location";
 import { parsePay, payFromFields, type Pay } from "@/lib/india/pay";
 import { statesQualifications } from "@/lib/india/requirements";
-import { belongsToCompany, isFreeHosting, registered } from "./domains";
+import { belongsToCompany, companyTokens, isFreeHosting, isPersonalEmail, registered } from "./domains";
+import { employerTrust, type EmployerIdentity } from "./employer";
 import { scamFlags } from "./scam";
 import type { JobSource } from "./types";
 
@@ -56,14 +57,9 @@ const UNVERIFIABLE: { re: RegExp; why: string }[] = [
   { re: /(^|\.)(instagram\.com|facebook\.com|fb\.com|fb\.me|x\.com|twitter\.com)$/i, why: "a social media post rather than the employer's application page" },
   { re: /(^|\.)linkedin\.com$/i, why: "a LinkedIn post rather than a LinkedIn job listing" },
 ];
-const PERSONAL_EMAIL = /@(?:gmail|googlemail|yahoo|ymail|rocketmail|hotmail|outlook|live|msn|rediffmail|rediff|protonmail|proton|pm|icloud|aol|gmx|zohomail|yandex|mail)\.(?:com|in|co\.in|me|net|ru)\b/i;
 
-const COMPANY_NOISE = /\b(private|pvt|limited|ltd|llp|inc|technologies|technology|tech|solutions|services|software|labs|india|global|the|and|co)\b\.?/gi;
-
-/** "Razorpay Software Pvt. Ltd." -> ["razorpay"]; used to match a company to its own domain. */
-export function companyTokens(company: string): string[] {
-  return company.toLowerCase().replace(COMPANY_NOISE, " ").replace(/[^a-z0-9 ]/g, " ").split(/\s+/).filter((t) => t.length >= 3);
-}
+// Kept here so existing imports of companyTokens from "./verify" keep working.
+export { companyTokens };
 
 function hostOf(url: string): string | null {
   try {
@@ -74,10 +70,21 @@ function hostOf(url: string): string | null {
   }
 }
 
-export function checkHiringSource(job: Pick<VerifiableJob, "source" | "company" | "apply_url" | "description">): Check {
+/** What the check cannot learn from the listing itself. */
+export interface VerifyContext {
+  /** Who posted an employer's own opening. Without it such an opening cannot be verified. */
+  employer?: EmployerIdentity;
+}
+
+export function checkHiringSource(job: Pick<VerifiableJob, "source" | "company" | "apply_url" | "description">, context: VerifyContext = {}): Check {
   const label = "Real hiring source";
   if (!job.company || /^unknown/i.test(job.company)) return { key: "source", label, ok: false, detail: "No employer named" };
-  if (job.source === "manual") return { key: "source", label, ok: true, detail: "Posted by an employer account on FindSeek" };
+  if (job.source === "manual") {
+    // Anyone can create an employer account and call it anything. Being on FindSeek proves nothing:
+    // the account has to be tied to the company it posts for.
+    const trust = employerTrust(job.company, context.employer);
+    return { key: "source", label, ok: trust.ok, detail: trust.detail };
+  }
 
   const emailMatch = job.apply_url.match(/^mailto:([^?]+)/i);
   if (emailMatch) {
@@ -92,7 +99,7 @@ export function checkHiringSource(job: Pick<VerifiableJob, "source" | "company" 
     const tokens = companyTokens(job.company);
     // Every address must be the company's own; one stray recipient is enough to fail.
     for (const email of addresses) {
-      if (PERSONAL_EMAIL.test(email)) return { key: "source", label, ok: false, detail: `Applications go to a personal email (${email})` };
+      if (isPersonalEmail(email)) return { key: "source", label, ok: false, detail: `Applications go to a personal email (${email})` };
       const domain = email.split("@")[1]?.toLowerCase() ?? "";
       if (!email.includes("@") || !belongsToCompany(job.company, tokens, domain)) {
         return { key: "source", label, ok: false, detail: `Email domain ${domain || email} isn't ${job.company}'s own domain` };
@@ -119,9 +126,9 @@ export function checkHiringSource(job: Pick<VerifiableJob, "source" | "company" 
   return { key: "source", label, ok: false, detail: `${host} isn't ${job.company}'s website or a known hiring platform` };
 }
 
-export function verifyListing(job: VerifiableJob): Verification {
+export function verifyListing(job: VerifiableJob, context: VerifyContext = {}): Verification {
   const text = `${job.title}\n${job.description}`;
-  const checks: Check[] = [checkHiringSource(job)];
+  const checks: Check[] = [checkHiringSource(job, context)];
 
   const words = job.description.trim().split(/\s+/).filter(Boolean).length;
   checks.push(

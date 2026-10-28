@@ -12,8 +12,10 @@ import { MODEL } from "@/lib/ai/client";
 import { screenCandidate, type ApplicationSnapshot } from "@/lib/ai/screen-candidate";
 import { logAiAction } from "@/lib/data/profile";
 import { sendEmail } from "@/lib/email/send";
-import { isAiConfigured, isEmailConfigured } from "@/lib/env";
+import { env, isAiConfigured, isEmailConfigured } from "@/lib/env";
 import { enrichJob } from "@/lib/jobs/enrich";
+import { parseTrustedDomains } from "@/lib/jobs/employer";
+import { parseOperators } from "@/lib/ops/operators";
 import { MAX_POST_CHARS } from "@/lib/limits";
 import { noticeUrl, type NoticeCode } from "@/lib/notices";
 import { createServiceClient } from "@/lib/supabase/server";
@@ -138,10 +140,13 @@ export async function createPost(formData: FormData) {
 
 type PostRow = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any -- rows come from an untyped client
 
-/** The opening as a listing, run through the same gate as every other source. */
+/**
+ * The opening as a listing, run through the same gate as every other source. The gate also learns who
+ * is posting: an opening counts as the company's own only if the account is tied to that company.
+ */
 function postAsListing(r: Recruiter, post: PostRow, jobId: string, now: string) {
-  return enrichJob({
-    source: "manual",
+  const listing = {
+    source: "manual" as const,
     external_id: post.id,
     company: r.employer.name,
     title: post.title,
@@ -154,6 +159,13 @@ function postAsListing(r: Recruiter, post: PostRow, jobId: string, now: string) 
     salary_max: post.pay_max_inr,
     salary_currency: post.pay_min_inr != null ? "INR" : null,
     posted_at: post.published_at ?? now,
+  };
+  return enrichJob(listing, {
+    employer: {
+      email: r.user.email,
+      operators: parseOperators(env.operatorEmails),
+      trustedDomains: parseTrustedDomains(env.trustedEmployerDomains),
+    },
   });
 }
 
