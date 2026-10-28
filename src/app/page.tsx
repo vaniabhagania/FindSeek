@@ -15,7 +15,7 @@ const FLOW = [
   { title: "Say what you want, in your words", body: "Stage, roles, cities, pay, notice period, deal-breakers. FindSeek turns it into filters you confirm." },
   { title: "Get matches that fit your rules", body: "Only verified, open jobs are scored, each with plain reasons for and against." },
   { title: "Send a CV made for each job", body: "Reworded and reordered from facts you've confirmed. Nothing invented; you approve every change." },
-  { title: "Spend the time on interview prep", body: "Track every application in one place, with what to prepare for each." },
+  { title: "Spend the time on interview prep", body: "Track every application in one place. Each job page has a tip on what to prepare." },
 ];
 
 export default async function Home({ searchParams }: PageProps<"/">) {

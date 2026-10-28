@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "smoke": "node scripts/smoke.mjs",
+    "db:test": "scripts/db-test.sh",
     "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {

@@ -88,3 +88,29 @@ Set in Vercel (Project, Settings, Environment Variables), then redeploy:
 In Supabase: apply migrations `0003` to `0006` (they are not on any live database yet), and set Authentication, URL configuration, Site URL and redirect URL to `https://findseek.vercel.app` or the sign-in links will not land.
 
 After that, run `npm run smoke -- https://findseek.vercel.app` again. The private-page checks switch from "setup notice" to "sent to sign-in".
+
+## 4. Update, 28 October 2026: loopholes closed
+
+Fixed on the branch after the run above (597 unit tests, 35 database checks, lint, types and build clean).
+
+| Finding | Status |
+| --- | --- |
+| Section 2 finding 2: setup notice shown to every visitor | Fixed. In production it appears only in the operator area |
+| Finding 3: no `robots.txt` or share tags | Fixed. `robots.txt` keeps crawlers out of the app (the operator area is not listed, it is `noindex`); share tags added |
+| Finding 4: 15px sign-in field | Fixed. Text inputs are 16px |
+| Finding 5: no skip link | Fixed. Skip-to-content link and a `main` target on every layout (the main navigation already had a landmark) |
+| Finding 6: tracker copy | Fixed. The landing page now says what the tracker and job page do |
+| Next.js and zod advisories | Fixed. Next 16.4.3, zod 4.6.7, vite patched; `npm audit` reports 0 |
+| Employers could set a post's status through the API | Fixed in migration 0007 and tested against real database roles |
+| A pulled or held listing still took applications | Fixed in the app and in the database |
+| An employer could post as any company by typing its name | Fixed. Needs an email on the company's domain, or an operator, or a listed domain |
+| Filler text passed the description and qualifications checks | Fixed. Repeated or padded text is held; a heading plus one keyword is not enough |
+| A deal-breaker fired on a denial ("there is no service bond") | Fixed |
+| "Engineer II" and "Engineer III" merged as duplicates | Fixed |
+| "Checked live" shown for listings nobody re-checks | Fixed. Each source says only what was checked |
+| Deleting an employer account left its listings live | Fixed in migration 0008 |
+| Account deletion could be requested from another site | Fixed. The route refuses cross-site requests |
+
+Still open: the live Supabase project has none of migrations 0003 to 0008 applied and Vercel has no
+environment variables, so none of the database changes have run against the real project. The interview
+calendar, the daily email digest and learning from past hiring outcomes are not built.
