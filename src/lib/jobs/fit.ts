@@ -48,18 +48,49 @@ const DEAL_BREAKER_PATTERNS: { match: RegExp; find: RegExp; label: string }[] = 
   { match: /unpaid/i, find: /\b(unpaid|no stipend)\b/i, label: "Unpaid" },
 ];
 
-function dealBreakerHits(breakers: string[], text: string): string[] {
+// ---------------------------------------------------------------------------
+// "There is no service bond" is not a service bond.
+// ---------------------------------------------------------------------------
+// A deal-breaker the user named must not fire on an ad that says the thing does not apply. The check
+// reads only the clause the mention sits in, and only the few words next to it (six), so a denial of one
+// thing ("No service bond, but night shifts apply") never hides another. Missing a real deal-breaker
+// costs the user more than showing a spurious one, so when in doubt it still fires.
+
+const CLAUSE_BREAK = /[.!?\n;:,()]|\b(?:but|however|although|though|except|while|whereas|yet)\b/;
+const NEGATION = /\b(?:no|not|never|nor|without|zero|nil|neither|cannot|can't|don't|doesn't|won't|isn't|aren't)\b|\bfree of\b/;
+const DENIAL_AFTER =
+  /^\s*(?:(?:is|are|will be|shall be)\s+)?(?:[:=\-–]\s*)?(?:nil|none|zero|waived|absent|n\/a|not\s+(?:required|applicable|applied|needed|mandatory|there|present|charged))\b|^[-\s]*free\b/;
+
+/** Is this mention the ad saying the thing does NOT apply? `text` is lower-case. */
+function isDenied(text: string, start: number, end: number): boolean {
+  const clause = text.slice(Math.max(0, start - 80), start).split(CLAUSE_BREAK).pop() ?? "";
+  const nearest = clause.trim().split(/\s+/).filter(Boolean).slice(-6).join(" ");
+  if (NEGATION.test(nearest)) return true;
+  return DENIAL_AFTER.test(text.slice(end, end + 40));
+}
+
+/** Does the text mention `re` anywhere other than to say it does not apply? */
+function mentionsAffirmatively(re: RegExp, text: string): boolean {
+  const global = new RegExp(re.source, re.flags.includes("g") ? re.flags : `${re.flags}g`);
+  for (const m of text.matchAll(global)) {
+    if (!isDenied(text, m.index, m.index + m[0].length)) return true;
+  }
+  return false;
+}
+
+function dealBreakerHits(breakers: string[], rawText: string): string[] {
+  const text = rawText.toLowerCase().replace(/[’‘`´]/g, "'");
   const hits: string[] = [];
   for (const raw of breakers) {
     const phrase = raw.trim();
     if (phrase.length < 3) continue;
     const known = DEAL_BREAKER_PATTERNS.find((p) => p.match.test(phrase));
     if (known) {
-      if (known.find.test(text)) hits.push(known.label);
+      if (mentionsAffirmatively(known.find, text)) hits.push(known.label);
       continue;
     }
     const re = new RegExp(`\\b${phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i");
-    if (re.test(text)) hits.push(`Mentions "${phrase}"`);
+    if (mentionsAffirmatively(re, text)) hits.push(`Mentions "${phrase}"`);
   }
   return [...new Set(hits)];
 }
