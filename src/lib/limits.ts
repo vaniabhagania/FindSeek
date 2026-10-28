@@ -3,6 +3,12 @@
 /** Longest job post a user may paste, and longest description an employer may save. */
 export const MAX_POST_CHARS = 20_000;
 
+/**
+ * Longest job title that is read to tell vacancies apart. Real titles are a few dozen characters and
+ * the employer form stops at 160; anything past this is junk, and reading it all is not free.
+ */
+export const MAX_TITLE_CHARS = 300;
+
 /** Longest "what I'm looking for" text read during onboarding. */
 export const MAX_INTAKE_CHARS = 3_000;
 

@@ -33,7 +33,7 @@ export const INDIAN_CITIES: Record<string, string[]> = {
   "Goa": ["goa", "panaji"],
 };
 
-const STATES = [
+export const INDIAN_STATES = [
   "karnataka", "maharashtra", "telangana", "tamil nadu", "kerala", "gujarat", "haryana",
   "uttar pradesh", "west bengal", "rajasthan", "punjab", "odisha", "madhya pradesh", "andhra pradesh",
 ];
@@ -58,7 +58,7 @@ export function isIndianLocation(text: string | null | undefined): boolean {
   if (!text) return false;
   if (/\bindia\b|\bbharat\b/i.test(text)) return true;
   if (indianCitiesIn(text).length) return true;
-  return STATES.some((s) => new RegExp(`\\b${s}\\b`, "i").test(text));
+  return INDIAN_STATES.some((s) => new RegExp(`\\b${s}\\b`, "i").test(text));
 }
 
 export type WorkMode = "remote" | "hybrid" | "onsite";
