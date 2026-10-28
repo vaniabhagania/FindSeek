@@ -4,12 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // recorder, so what they check is the decision each action makes: what it saves, what it refuses,
 // and where it sends the recruiter.
 
-type Call = { table: string; method: string; args: unknown[] };
+type Call = { client: string; table: string; method: string; args: unknown[] };
 const log: Call[] = [];
 let storedPost: Record<string, unknown> | null = null;
 
 /** A chainable stand-in: every method records itself, and awaiting it gives the result for its first method. */
-function fakeClient(results: Record<string, unknown> = {}) {
+function fakeClient(client: "user" | "server", results: Record<string, unknown> = {}) {
   return {
     from(table: string) {
       let first = "";
@@ -21,7 +21,7 @@ function fakeClient(results: Record<string, unknown> = {}) {
           }
           return (...args: unknown[]) => {
             if (!first) first = String(prop);
-            log.push({ table, method: String(prop), args });
+            log.push({ client, table, method: String(prop), args });
             return b;
           };
         },
@@ -40,7 +40,7 @@ vi.mock("next/navigation", () => ({ redirect: (url: string) => redirect(url), no
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("@/lib/admin/session", () => ({
   getRecruiter: async () => ({
-    supabase: fakeClient(),
+    supabase: fakeClient("user"),
     user: { id: "u1", email: "r@acme.in" },
     employer: { id: "emp1", name: "Acme Technologies", role: "owner" },
   }),
@@ -51,7 +51,7 @@ vi.mock("@/lib/ai/screen-candidate", () => ({ screenCandidate: vi.fn() }));
 vi.mock("@/lib/email/send", () => ({ sendEmail: vi.fn() }));
 vi.mock("@/lib/data/profile", () => ({ logAiAction: vi.fn() }));
 
-import { createPost, updatePost } from "./admin";
+import { closePost, createPost, publishPost, updatePost } from "./admin";
 
 const GOOD_DESCRIPTION = `Acme Technologies is hiring a backend engineer for its Pune office. You will design and build payment APIs,
 review code, and work with the product team to ship features every two weeks. The team is small, so you will own
@@ -98,6 +98,8 @@ const basePost = {
 };
 
 const ran = (table: string, method: string) => log.filter((c) => c.table === table && c.method === method);
+const ranOn = (client: "user" | "server", table: string, method: string) =>
+  log.filter((c) => c.client === client && c.table === table && c.method === method);
 const run = async (fn: () => Promise<unknown>) => {
   try {
     await fn();
@@ -111,7 +113,7 @@ beforeEach(() => {
   log.length = 0;
   redirect.mockClear();
   storedPost = { ...basePost };
-  service = fakeClient();
+  service = fakeClient("server");
 });
 
 describe("updatePost: a draft", () => {
@@ -129,6 +131,8 @@ describe("updatePost: a draft", () => {
       pay_period: "year",
     });
     expect(ran("jobs", "upsert")).toHaveLength(0); // a draft is not in anyone's feed
+    expect(ranOn("user", "job_posts", "update")).toHaveLength(1); // drafts are the recruiter's own to edit
+    expect(ranOn("server", "job_posts", "update")).toHaveLength(0);
   });
 
   it("keeps a monthly stipend monthly", async () => {
@@ -192,6 +196,10 @@ describe("updatePost: an opening that is live", () => {
     const out = await run(() => updatePost(basePost.id, form({ ...valid, title: "Senior Backend Engineer" })));
     expect(out).toBe(`REDIRECT:/admin/posts/${basePost.id}?saved=live`);
     expect(ran("job_posts", "update")).toHaveLength(1);
+    // The database refuses a user session editing a live opening (migration 0007), so the checked
+    // edit is written with the server key, never the recruiter's own session.
+    expect(ranOn("server", "job_posts", "update")).toHaveLength(1);
+    expect(ranOn("user", "job_posts", "update")).toHaveLength(0);
     const upsert = ran("jobs", "upsert");
     expect(upsert).toHaveLength(1);
     expect(upsert[0].args[0]).toMatchObject({
@@ -257,5 +265,67 @@ describe("createPost", () => {
     // the insert's result comes from the recorder's default, so only the payload is checked
     await run(() => createPost(form(valid)));
     expect(ran("job_posts", "insert")[0].args[0]).toMatchObject({ employer_id: "emp1", pay_min_inr: 1_800_000, pay_max_inr: 2_600_000, pay_period: "year", country_code: "in" });
+  });
+});
+
+
+describe("closePost", () => {
+  const liveStored = () => {
+    storedPost = { ...basePost, status: "open", job_id: "33333333-3333-3333-3333-333333333333", published_at: "2026-10-01T00:00:00Z" };
+  };
+
+  it("closes with the server key and takes the listing out of candidates' feeds", async () => {
+    liveStored();
+    await run(() => closePost(basePost.id));
+    const closed = ranOn("server", "job_posts", "update");
+    expect(closed).toHaveLength(1);
+    expect(closed[0].args[0]).toEqual({ status: "closed" });
+    expect(ranOn("user", "job_posts", "update")).toHaveLength(0); // the database refuses status writes from a user session
+    const listing = ranOn("server", "jobs", "update");
+    expect(listing).toHaveLength(1);
+    expect(listing[0].args[0]).toHaveProperty("closed_at");
+  });
+
+  it("closes the candidate-facing listing before the post, so a failure never leaves it live", async () => {
+    liveStored();
+    await run(() => closePost(basePost.id));
+    const order = log.filter((c) => c.method === "update").map((c) => c.table);
+    expect(order).toEqual(["jobs", "job_posts"]);
+  });
+
+  it("stops and changes nothing when the server cannot write", async () => {
+    liveStored();
+    service = null;
+    const out = await run(() => closePost(basePost.id));
+    expect(out).toBe(`REDIRECT:/admin/posts/${basePost.id}?error=service_key`);
+    expect(ran("job_posts", "update")).toHaveLength(0);
+  });
+
+  it("does nothing for another employer's opening", async () => {
+    storedPost = null;
+    const out = await run(() => closePost("22222222-2222-2222-2222-222222222222"));
+    expect(out).toBe("REDIRECT:/admin");
+    expect(ran("job_posts", "update")).toHaveLength(0);
+    expect(ran("jobs", "update")).toHaveLength(0);
+  });
+});
+
+describe("publishPost", () => {
+  it("opens the opening with the server key, only after the listing passes every check", async () => {
+    storedPost = { ...basePost, title: "Backend Engineer", description: GOOD_DESCRIPTION, location: "Pune", remote: false, pay_min_inr: 1_800_000, pay_max_inr: 2_600_000 };
+    await run(() => publishPost(basePost.id));
+    expect(ranOn("server", "jobs", "upsert")).toHaveLength(1);
+    const opened = ranOn("server", "job_posts", "update");
+    expect(opened).toHaveLength(1);
+    expect(opened[0].args[0]).toMatchObject({ status: "open" });
+    expect(ranOn("user", "job_posts", "update")).toHaveLength(0);
+  });
+
+  it("opens nothing when a check fails", async () => {
+    storedPost = { ...basePost, description: "Join our amazing team in Pune! We love great culture and free snacks. ".repeat(4), pay_min_inr: 1_800_000, pay_max_inr: 2_600_000 };
+    const out = await run(() => publishPost(basePost.id));
+    expect(out).toContain("error=unpublishable");
+    expect(ran("job_posts", "update")).toHaveLength(0);
+    expect(ran("jobs", "upsert")).toHaveLength(0);
   });
 });

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { approveDocument, markApplied, reportJob, tailorForJob } from "@/app/actions/jobs";
 import { AdzunaAttribution } from "@/components/adzuna-attribution";
 import { EmployerApply } from "@/components/employer-apply";
+import { openingAcceptsApplications } from "@/lib/jobs/opening";
 import { Caution, Check, Cross, External, Flag, Shield } from "@/components/icons";
 import { JobFacts, type RowJob } from "@/components/job-row";
 import { FitLedger, VerificationList } from "@/components/ledger";
@@ -213,7 +214,7 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
                 )}
               </div>
               {post && doc.approved_at && application && (
-                <EmployerApply jobId={job.id} applicationId={application.id} company={job.company} postStatus={post.status} submission={submission} />
+                <EmployerApply jobId={job.id} applicationId={application.id} company={job.company} postStatus={openingAcceptsApplications(post.status, job) ? "open" : "closed"} submission={submission} />
               )}
             </div>
           )}

@@ -13,6 +13,7 @@ import { enrichJob } from "@/lib/jobs/enrich";
 import { JOB_FEED_COLUMNS } from "@/lib/jobs/feed";
 import { fitChecks, fitSummary } from "@/lib/jobs/fit";
 import { checkStillOpen } from "@/lib/jobs/liveness";
+import { openingAcceptsApplications } from "@/lib/jobs/opening";
 import { looksRemote } from "@/lib/jobs/text";
 import type { NormalizedJob } from "@/lib/jobs/types";
 import { MAX_POST_CHARS } from "@/lib/limits";
@@ -287,7 +288,9 @@ export async function submitToEmployer(jobId: string, applicationId: string, for
 
   const { data: post } = await supabase.from("job_posts").select("id, status").eq("job_id", jobId).maybeSingle();
   if (!post) redirect(`/jobs/${jobId}`);
-  if (post.status !== "open") back("post_closed");
+  // Open is not enough: a listing an operator pulled or held can sit behind a post that still says open.
+  const { data: listing } = await supabase.from("jobs").select("verification_status, closed_at").eq("id", jobId).maybeSingle();
+  if (!openingAcceptsApplications(post.status, listing)) back("post_closed");
 
   const { data: application } = await supabase
     .from("applications").select("id").eq("id", applicationId).eq("user_id", user.id).maybeSingle();

@@ -244,7 +244,11 @@ export async function updatePost(postId: string, formData: FormData) {
     requireVerified(enriched, editPath, "edit_unpublishable");
   }
 
-  const { error } = await r.supabase
+  // The database refuses a recruiter's own session editing an opening that is live (migration 0007),
+  // so the gate above cannot be skipped by calling the API directly. A checked live edit is written
+  // with the server key; a draft or closed opening is still the recruiter's to edit.
+  const writer = live && admin ? admin : r.supabase;
+  const { error } = await writer
     .from("job_posts")
     .update({
       title: f.title,
@@ -273,11 +277,24 @@ export async function updatePost(postId: string, formData: FormData) {
 export async function closePost(postId: string) {
   const r = await requireRecruiter();
   const post = await loadOwnPost(r, postId);
-  await r.supabase.from("job_posts").update({ status: "closed" }).eq("id", post.id);
-  // Take it out of candidates' feeds too, not just the employer's list.
-  if (post.job_id) await createServiceClient()?.from("jobs").update({ closed_at: new Date().toISOString() }).eq("id", post.job_id);
-  revalidatePath(`/admin/posts/${post.id}`);
+  const path = `/admin/posts/${post.id}`;
+
+  // Status is the server's to change (migration 0007), so closing is written with the server key.
+  const admin = createServiceClient();
+  if (!admin) fail(path, "service_key");
+
+  // Take it out of candidates' feeds first, so a failure part-way never leaves a closed opening live.
+  if (post.job_id) {
+    const { error: listingError } = await admin.from("jobs").update({ closed_at: new Date().toISOString() }).eq("id", post.job_id);
+    if (listingError) fail(path, "post_save");
+  }
+  const { error } = await admin.from("job_posts").update({ status: "closed" }).eq("id", post.id).eq("employer_id", r.employer.id);
+  if (error) fail(path, "post_save");
+
+  revalidatePath(path);
   revalidatePath("/admin");
+  revalidatePath("/jobs");
+  if (post.job_id) revalidatePath(`/jobs/${post.job_id}`);
 }
 
 // ---------------------------------------------------------------------------
