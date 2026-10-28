@@ -3,6 +3,9 @@ import { redirect } from "next/navigation";
 import { signOut } from "@/app/actions/auth";
 import { SetupNotice } from "@/components/setup-notice";
 import { getRecruiter } from "@/lib/admin/session";
+import { PRIVATE_PAGE } from "@/lib/seo";
+
+export const metadata = PRIVATE_PAGE;
 
 export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
   const { supabase, user, employer } = await getRecruiter();
@@ -25,7 +28,7 @@ export default async function AdminLayout({ children }: LayoutProps<"/admin">) {
           </form>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">{children}</main>
+      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-5xl flex-1 px-4 py-8">{children}</main>
     </>
   );
 }

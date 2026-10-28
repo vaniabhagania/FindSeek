@@ -28,7 +28,7 @@ export default async function Home({ searchParams }: PageProps<"/">) {
         <Link href="/login" className="btn-quiet">Sign in</Link>
       </header>
 
-      <main className="mx-auto w-full max-w-6xl flex-1 px-5">
+      <main id="main" tabIndex={-1} className="mx-auto w-full max-w-6xl flex-1 px-5">
         {deleted && <p className="mb-6 muted">Your account and data have been deleted.</p>}
 
         <section className="grid items-center gap-12 py-12 md:grid-cols-[1.1fr_1fr] md:py-20">
@@ -113,7 +113,7 @@ function Specimen() {
             <li className="tick tick-good"><Check /> In Bengaluru</li>
             <li className="tick tick-good"><Check /> Pays above your ₹20k</li>
             <li className="tick tick-caution"><Caution /> Starts in 3 weeks</li>
-            <li className="tick text-muted"><Pulse /> Seen on the company's job board 2 hours ago</li>
+            <li className="tick text-muted"><Pulse /> Seen on the company&apos;s job board 2 hours ago</li>
           </ul>
         </div>
         <div className="border-t border-line bg-raised px-6 py-4">
@@ -129,7 +129,7 @@ function Specimen() {
           <Cross className="text-blocker" /> 3 similar posts held back today: no pay stated, WhatsApp-only hiring
         </div>
       </div>
-      <figcaption className="mt-3 text-sm text-muted">Example listing</figcaption>
+      <figcaption className="mt-3 text-sm text-muted">An illustration of a verified listing; the details are made up.</figcaption>
     </figure>
   );
 }

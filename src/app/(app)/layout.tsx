@@ -3,7 +3,10 @@ import { redirect } from "next/navigation";
 import { signOut } from "@/app/actions/auth";
 import { AppNav } from "@/components/app-nav";
 import { SetupNotice } from "@/components/setup-notice";
+import { PRIVATE_PAGE } from "@/lib/seo";
 import { getUser } from "@/lib/supabase/server";
+
+export const metadata = PRIVATE_PAGE;
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const { supabase, user } = await getUser();
@@ -22,7 +25,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
               <button className="btn-quiet">Sign out</button>
             </form>
           </header>
-          <main className="w-full max-w-4xl flex-1 px-4 pt-4 pb-28 md:px-8 md:pb-16">{children}</main>
+          <main id="main" tabIndex={-1} className="w-full max-w-4xl flex-1 px-4 pt-4 pb-28 md:px-8 md:pb-16">{children}</main>
         </div>
       </div>
     </div>

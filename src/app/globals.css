@@ -94,6 +94,7 @@
   h3 { font-size: 1.0625rem; font-weight: 600; }
   .figure { font-family: var(--font-display); font-stretch: 82%; font-variant-numeric: tabular-nums; }
 
+  main:focus-visible { outline: none; }
   :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
 }
 
@@ -110,7 +111,7 @@
   .btn-quiet { @apply inline-flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-sm text-muted transition-colors hover:bg-raised hover:text-ink; }
 
   .input {
-    @apply w-full rounded-lg border border-line bg-surface px-3 py-2 text-[15px] text-ink outline-none transition-colors placeholder:text-muted/70 focus:border-accent;
+    @apply w-full rounded-lg border border-line bg-surface px-3 py-2 text-[16px] text-ink outline-none transition-colors placeholder:text-muted/70 focus:border-accent;
   }
   .label { @apply mb-1.5 block text-sm font-medium text-ink; }
   .hint { @apply mt-1 text-sm text-muted; }
