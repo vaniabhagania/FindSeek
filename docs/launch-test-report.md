@@ -91,7 +91,7 @@ After that, run `npm run smoke -- https://findseek.vercel.app` again. The privat
 
 ## 4. Update, 28 October 2026: loopholes closed
 
-Fixed on the branch after the run above (597 unit tests, 35 database checks, lint, types and build clean).
+Fixed on the branch after the run above (611 unit tests, 35 database checks, lint, types and build clean).
 
 | Finding | Status |
 | --- | --- |
@@ -110,6 +110,7 @@ Fixed on the branch after the run above (597 unit tests, 35 database checks, lin
 | "Checked live" shown for listings nobody re-checks | Fixed. Each source says only what was checked |
 | Deleting an employer account left its listings live | Fixed in migration 0008 |
 | Account deletion could be requested from another site | Fixed. The route refuses cross-site requests |
+| With no database connected, the signed-in screens opened to anyone | Fixed. In production they send visitors to sign-in until Supabase is connected |
 
 Still open: the live Supabase project has none of migrations 0003 to 0008 applied and Vercel has no
 environment variables, so none of the database changes have run against the real project. The interview

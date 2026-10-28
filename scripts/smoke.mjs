@@ -70,7 +70,7 @@ check("account export refuses a signed-out visitor", exportRes.res.status === 40
 const del = await get("/api/account/delete");
 check("account delete can't be triggered by a plain GET", [401, 404, 405].includes(del.res.status), `status ${del.res.status}`);
 
-// 4. Signed-in areas: either the sign-in page (Supabase connected) or the setup notice (not yet).
+// 4. Signed-in areas: the sign-in page. (A dev server with no keys opens them with a setup notice instead.)
 for (const path of ["/jobs", "/profile", "/tracker", "/admin"]) {
   const r = await get(path);
   const toLogin = r.finalPath.startsWith("/login");
