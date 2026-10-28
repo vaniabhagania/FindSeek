@@ -20,14 +20,29 @@ export function freshness(
   return "stale";
 }
 
-/** "Checked 3 hours ago" — when the listing was last confirmed live at its source. */
-export function checkedAgo(lastSeen: string | null | undefined, now = new Date()): string | null {
-  if (!lastSeen) return null;
-  const mins = Math.max(0, Math.round((now.getTime() - new Date(lastSeen).getTime()) / 60000));
-  if (mins < 60) return `Checked live ${mins <= 1 ? "just now" : `${mins} min ago`}`;
+const SEEN_WHERE: Record<string, string> = {
+  greenhouse: "the company's job board",
+  lever: "the company's job board",
+  adzuna: "job-site listings",
+};
+
+/**
+ * "Seen on the company's job board 3 hours ago": when the daily import last found this listing at its
+ * source. Only sources that are pulled again get a line. A pasted post or an employer's own opening is
+ * written once and never re-checked, so it says nothing rather than claim a check that did not happen.
+ */
+export function checkedAgo(
+  job: { last_seen_at?: string | null; source?: string | null },
+  now = new Date(),
+): string | null {
+  const where = job.source ? SEEN_WHERE[job.source] : undefined;
+  if (!job.last_seen_at || !where) return null;
+  const preposition = job.source === "adzuna" ? "in" : "on";
+  const mins = Math.max(0, Math.round((now.getTime() - new Date(job.last_seen_at).getTime()) / 60000));
+  if (mins < 60) return `Seen ${preposition} ${where} ${mins <= 1 ? "just now" : `${mins} min ago`}`;
   const hours = Math.round(mins / 60);
-  if (hours < 48) return `Checked live ${hours} hour${hours === 1 ? "" : "s"} ago`;
-  return `Last seen live ${Math.round(hours / 24)} days ago`;
+  if (hours < 48) return `Seen ${preposition} ${where} ${hours} hour${hours === 1 ? "" : "s"} ago`;
+  return `Last seen ${preposition} ${where} ${Math.round(hours / 24)} days ago`;
 }
 
 export function postedAgo(postedAt: string | null | undefined, now = new Date()): string | null {

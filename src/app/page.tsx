@@ -113,7 +113,7 @@ function Specimen() {
             <li className="tick tick-good"><Check /> In Bengaluru</li>
             <li className="tick tick-good"><Check /> Pays above your ₹20k</li>
             <li className="tick tick-caution"><Caution /> Starts in 3 weeks</li>
-            <li className="tick text-muted"><Pulse /> Checked live 2 hours ago</li>
+            <li className="tick text-muted"><Pulse /> Seen on the company's job board 2 hours ago</li>
           </ul>
         </div>
         <div className="border-t border-line bg-raised px-6 py-4">

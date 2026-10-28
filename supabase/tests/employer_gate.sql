@@ -149,6 +149,44 @@ select tt.check('no new applications while the listing is held', tt.apply(:'cand
 update public.jobs set verification_status = 'verified' where id = :'j2';
 select tt.check('applications resume once the listing is verified again', tt.apply(:'cand2', :'p2') = 'ok');
 
+-- 4. Deleting an opening (or the employer account behind it) takes its public listing down.
+\set emp3 '00000000-0000-0000-0000-0000000000e3'
+\set org3 '00000000-0000-0000-0000-00000000000c'
+\set p4   '00000000-0000-0000-0000-0000000000b4'
+\set j4   '00000000-0000-0000-0000-0000000000d4'
+\set p5   '00000000-0000-0000-0000-0000000000b5'
+\set j5   '00000000-0000-0000-0000-0000000000d5'
+\set j6   '00000000-0000-0000-0000-0000000000d6'
+insert into auth.users (id, email) values (:'emp3', 'emp3@example.test');
+insert into public.employers (id, name, created_by) values (:'org3', 'Gone Ltd', :'emp3');
+insert into public.job_posts (id, employer_id, title, description) values
+  (:'p4', :'org3', 'Opening one', 'Long enough text for the opening, which will be deleted along with the account.'),
+  (:'p5', :'org3', 'Opening two', 'Long enough text for the second opening, which will be deleted along with the account.');
+insert into public.jobs (id, source, external_id, company, title, description, apply_url, verification_status, verified_at)
+values (:'j4', 'manual', :'p4', 'Gone Ltd', 'Opening one', 'A verified description.', '/jobs/' || :'j4', 'verified', now()),
+       (:'j5', 'manual', :'p5', 'Gone Ltd', 'Opening two', 'A verified description.', '/jobs/' || :'j5', 'verified', now());
+update public.job_posts set job_id = :'j4', status = 'open', published_at = now() where id = :'p4';
+update public.job_posts set job_id = :'j5', status = 'open', published_at = now() where id = :'p5';
+-- j5 was already pulled by an operator earlier: that time must survive.
+update public.jobs set closed_at = '2026-01-01T00:00:00Z' where id = :'j5';
+select tt.check('a listing is open before its employer goes', (select closed_at is null from public.jobs where id = :'j4'));
+
+delete from auth.users where id = :'emp3';
+select tt.check('the employer account is gone', not exists (select 1 from public.employers where id = :'org3'));
+select tt.check('its openings are gone', not exists (select 1 from public.job_posts where employer_id = :'org3'));
+select tt.check('deleting the account closes its live listing', (select closed_at is not null from public.jobs where id = :'j4'));
+select tt.check('an earlier closing time is kept', (select closed_at = '2026-01-01T00:00:00Z' from public.jobs where id = :'j5'));
+
+-- A listing left behind by a deletion that happened before the trigger existed is cleaned up by the migration.
+insert into public.jobs (id, source, external_id, company, title, description, apply_url, verification_status, verified_at)
+values (:'j6', 'manual', '00000000-0000-0000-0000-0000000000ff', 'Ghost Ltd', 'Orphan', 'A verified description.', '/jobs/x', 'verified', now());
+select tt.check('an orphaned listing is open before the clean-up', (select closed_at is null from public.jobs where id = :'j6'));
+\ir ../migrations/0008_close_listing_with_post.sql
+select tt.check('the migration closes orphaned listings', (select closed_at is not null from public.jobs where id = :'j6'));
+select tt.check('the migration leaves a listing with a live opening alone', (select closed_at is null from public.jobs where id = :'j2'));
+select tt.check('listings from other sources are untouched',
+  (select count(*) from public.jobs where source <> 'manual' and closed_at is not null) = 0);
+
 \o
 \echo
 \echo 'employer_gate results'

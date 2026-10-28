@@ -58,7 +58,7 @@ export default async function JobPage({ params, searchParams }: PageProps<"/jobs
   const closed = Boolean(job.closed_at);
   const fit = fitChecks(job, preferencesOf(profile));
   const ghosts = ghostSignals(job);
-  const live = closed ? null : checkedAgo(job.last_seen_at);
+  const live = closed ? null : checkedAgo(job);
   const failed = checks.filter((c) => !c.ok);
 
   return (

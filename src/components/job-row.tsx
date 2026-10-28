@@ -21,6 +21,7 @@ export interface RowJob {
   salary_currency?: string | null;
   posted_at: string | null;
   last_seen_at?: string | null;
+  source?: string | null;
 }
 
 const TYPE: Record<string, string> = {
@@ -73,7 +74,7 @@ export function JobRow({
   summary?: string | null;
   children?: React.ReactNode;
 }) {
-  const live = checkedAgo(job.last_seen_at) ?? postedAgo(job.posted_at);
+  const live = checkedAgo(job) ?? postedAgo(job.posted_at);
   return (
     <article className="px-4 py-5 sm:px-6">
       <div className="flex items-start gap-4">

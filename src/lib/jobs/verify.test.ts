@@ -155,7 +155,7 @@ describe("freshness and ghost signals", () => {
     expect(freshness({ posted_at: "2026-10-20T00:00:00Z", last_seen_at: "2026-10-21T06:00:00Z" }, now)).toBe("new");
     expect(freshness({ posted_at: "2026-10-20T00:00:00Z", last_seen_at: "2026-10-10T06:00:00Z" }, now)).toBe("stale");
     expect(freshness({ posted_at: "2026-10-20T00:00:00Z", closed_at: "2026-10-21T00:00:00Z" }, now)).toBe("closed");
-    expect(checkedAgo("2026-10-21T09:00:00Z", now)).toBe("Checked live 3 hours ago");
+    expect(checkedAgo({ last_seen_at: "2026-10-21T09:00:00Z", source: "greenhouse" }, now)).toBe("Seen on the company's job board 3 hours ago");
   });
   it("explains ghost-job signals", () => {
     const signals = ghostSignals({ posted_at: "2026-07-01T00:00:00Z", description: "Join our talent pool", repost_count: 3 }, now);
