@@ -9,6 +9,7 @@ import { statesQualifications } from "@/lib/india/requirements";
 import { belongsToCompany, companyTokens, isFreeHosting, isPersonalEmail, registered } from "./domains";
 import { employerTrust, type EmployerIdentity } from "./employer";
 import { scamFlags } from "./scam";
+import { fillerReason } from "./text";
 import type { JobSource } from "./types";
 
 export interface VerifiableJob {
@@ -131,10 +132,13 @@ export function verifyListing(job: VerifiableJob, context: VerifyContext = {}): 
   const checks: Check[] = [checkHiringSource(job, context)];
 
   const words = job.description.trim().split(/\s+/).filter(Boolean).length;
+  const filler = words >= 80 ? fillerReason(job.description) : null;
   checks.push(
-    words >= 80
-      ? { key: "description", label: "Full job description", ok: true, detail: `${words} words` }
-      : { key: "description", label: "Full job description", ok: false, detail: `Only ${words} words; too short to judge the role` },
+    words < 80
+      ? { key: "description", label: "Full job description", ok: false, detail: `Only ${words} words; too short to judge the role` }
+      : filler
+        ? { key: "description", label: "Full job description", ok: false, detail: filler }
+        : { key: "description", label: "Full job description", ok: true, detail: `${words} words` },
   );
 
   const quals = statesQualifications(job.description);

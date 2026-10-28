@@ -86,7 +86,16 @@ const listing = (over: Partial<NormalizedJob> = {}): NormalizedJob => ({
   location: "Pune",
   country_code: "in",
   remote: false,
-  description: "Requirements: B.Tech in Computer Science and 3+ years of experience with Java and SQL. ".repeat(6) + " Salary: ₹18-26 LPA. Hybrid in Pune.",
+  description: `We are hiring a Java developer for our banking platform team in Pune. You will build and maintain services
+    that process millions of transactions a day, review code written by teammates, fix production issues, and take part in
+    design discussions with product managers and architects every week.
+
+    Requirements:
+    - B.Tech in Computer Science or a related field
+    - 3+ years of experience with Java, Spring Boot and SQL databases
+    - Good understanding of REST APIs and message queues
+
+    Salary: ₹18-26 LPA. Hybrid in Pune, three days a week at the office. We reply to every application within two weeks.`,
   apply_url: "/jobs/abc",
   salary_min: 1_800_000,
   salary_max: 2_600_000,

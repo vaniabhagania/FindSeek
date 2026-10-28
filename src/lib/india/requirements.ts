@@ -46,14 +46,32 @@ export function parseJobType(title: string, text: string): JobType {
 }
 
 const QUAL_HEADINGS = /\b(qualifications?|requirements?|what you('|’)ll need|what we('|’)re looking for|who you are|you (have|bring|should have)|must[- ]haves?|skills required|eligibility( criteria)?|desired (skills|profile)|minimum qualifications|about you)\b/i;
-const QUAL_SIGNALS = /\b(b\.?\s?tech|b\.?\s?e\.?|m\.?\s?tech|mca|bca|b\.?\s?sc|m\.?\s?sc|mba|bachelor('|’)?s|master('|’)?s|degree|graduate|diploma|\d+\+?\s*(years?|yrs?)|proficien(t|cy) in|experience (with|in)|knowledge of|familiar(ity)? with)\b/i;
+
+// What a requirement can be about. A real ad names more than one kind (a degree and some years, or a
+// degree and a skill); the same kind said again, or a lone keyword, is not a list of requirements.
+const QUAL_KINDS: RegExp[] = [
+  // Education. "BE" is only a degree when written B.E. or in capitals next to other degrees, never the word "be".
+  /\b(?:b\.?\s?tech|m\.?\s?tech|mca|bca|b\.?\s?sc|m\.?\s?sc|mba|bachelor('|’)?s|master('|’)?s|degree|graduate|diploma)\b/i,
+  /\b(?:B\.\s?E\b|BE\b(?=\s*[/,&(]|\s+(?:in|or|and|degree)\b))/,
+  // Years of experience.
+  /\b\d+\+?\s*(?:years?|yrs?)\b/i,
+  // Experience in something.
+  /\bexperience (?:with|in)\b/i,
+  // A named skill.
+  /\b(?:proficien(?:t|cy) in|knowledge of|familiar(?:ity)? with)\b/i,
+];
 
 /** Does the ad actually say what it takes to get the job? */
 export function statesQualifications(input: string): { ok: boolean; detail: string } {
   const text = input.length > MAX_PARSE_CHARS ? input.slice(0, MAX_PARSE_CHARS) : input;
   const heading = text.match(QUAL_HEADINGS);
-  const signals = text.match(new RegExp(QUAL_SIGNALS.source, "gi")) ?? [];
-  if (heading && signals.length >= 1) return { ok: true, detail: `Has a "${heading[0]}" section` };
-  if (signals.length >= 3) return { ok: true, detail: "Lists degree, skill or experience requirements" };
+  // Education counts once, whether it is written B.Tech or B.E.
+  const kinds = new Set<string>();
+  if (QUAL_KINDS[0].test(text) || QUAL_KINDS[1].test(text)) kinds.add("education");
+  if (QUAL_KINDS[2].test(text)) kinds.add("years");
+  if (QUAL_KINDS[3].test(text)) kinds.add("experience");
+  if (QUAL_KINDS[4].test(text)) kinds.add("skill");
+  if (heading && kinds.size >= 2) return { ok: true, detail: `Has a "${heading[0]}" section` };
+  if (kinds.size >= 3) return { ok: true, detail: "Lists degree, skill or experience requirements" };
   return { ok: false, detail: "Doesn't say what qualifications or skills are needed" };
 }
